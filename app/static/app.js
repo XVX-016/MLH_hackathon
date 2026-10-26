@@ -446,8 +446,8 @@ function renderKnowledgeGraph(graphData) {
   var data = { nodes: new window.vis.DataSet(nodes), edges: new window.vis.DataSet(edges) };
   if (visNetworkInstance) visNetworkInstance.destroy();
   visNetworkInstance = new window.vis.Network(container, data, {
-    nodes: { shape: "dot", borderWidth: 1, color: { background: "#0F2A2B", border: "#2DD4BF", highlight: { background: "#2DD4BF", border: "#38BDF8" }, hover: { background: "#163A3B", border: "#38BDF8" } }, font: { color: "#EEF2F6", size: 13, face: "Inter, system-ui, sans-serif", strokeWidth: 0 } },
-    edges: { width: 1, color: { color: "#2A3542", highlight: "#38BDF8", hover: "#8C97A5" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } }, smooth: { type: "continuous" }, font: { size: 0 } },
+    nodes: { shape: "dot", borderWidth: 1, color: { background: "#141414", border: "#FAFAFA", highlight: { background: "#F59E0B", border: "#F59E0B" }, hover: { background: "#262626", border: "#FFFFFF" } }, font: { color: "#FAFAFA", size: 13, face: "Inter, system-ui, sans-serif", strokeWidth: 0 } },
+    edges: { width: 1, color: { color: "#3A3A3A", highlight: "#3B82F6", hover: "#8F8F8F" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } }, smooth: { type: "continuous" }, font: { size: 0 } },
     physics: { stabilization: { iterations: 200 }, barnesHut: { gravitationalConstant: -6000, springLength: 160, avoidOverlap: 0.6 } },
     interaction: { hover: true, tooltipDelay: 150 }
   });
