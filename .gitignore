@@ -12,8 +12,10 @@ htmlcov/
 .env.local
 *.env
 
-# Local data & uploads
-data/
+# Local data & uploads (the checked-in offline demo is intentionally retained)
+data/*
+!data/demo/
+!data/demo/demo_attention.json
 data/uploads/
 uploads/
 *.mp4
