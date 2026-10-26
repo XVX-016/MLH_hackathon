@@ -49,3 +49,14 @@ the compatible change first, then the dependent implementation can proceed.
 - Add tests alongside owned code and run the focused test command before handoff.
 - Every PR uses the repository template and has one reviewer from a different
   owner lane. Hardik performs the final integration review.
+
+## Project launch & Agent skills
+
+- **Console-guided startup**: Run `python run.py` to start the server. It displays the active port, API documentation URL, offline demo instructions, and key configuration status.
+- **Ownership verification**: Run `python tools/verify_ownership.py --member <Name> --base HEAD` before submitting work.
+- **Hackathon Agent Skills**: Agents should leverage relevant DevRelay and sponsor skills:
+  - `devrelay-sponsor-skills`: For official SDKs and sponsor integrations (e.g. DigitalOcean, Gemini).
+  - `devrelay-challenges`: For judging rubrics, prize criteria, and challenge requirements.
+  - `devrelay-offers`: For cloud credits and promo codes.
+  - `devrelay-mlh-submissions`: For hackathon project submission and challenge entry.
+- **Heavy Agentic Lane Delegation**: Faariz is equipped with Codex and Claude plans to handle computationally heavy modules (entity resolution, Vis.js graph topology, RapidFuzz quote verification, FAISS semantic search, and evaluation suites).

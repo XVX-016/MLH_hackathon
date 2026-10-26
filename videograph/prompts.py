@@ -159,3 +159,32 @@ Return ONLY valid JSON matching this structure:
   ]
 }}
 """
+
+FLASHCARDS_PROMPT = """
+You are an expert educator creating study flashcards from a video transcript chunk.
+For each key concept or claim in the chunk, produce one flashcard with:
+- A clear conceptual question on the front.
+- A concise, grounded answer on the back.
+- An exact verbatim quote from the chunk supporting the answer (max 25 words).
+- The start and end timestamps (seconds) of the supporting quote.
+
+Every key_quote MUST be an exact substring from the transcript text below.
+Do NOT fabricate quotes or timestamps.
+
+Transcript Chunk (from {chunk_start:.1f}s to {chunk_end:.1f}s):
+{chunk_text}
+
+Return ONLY valid JSON matching this structure:
+{{
+  "flashcards": [
+    {{
+      "id": 0,
+      "question": "What is the purpose of...?",
+      "answer": "Concise grounded answer here.",
+      "key_quote": "exact verbatim phrase from transcript",
+      "start_sec": {chunk_start:.1f},
+      "end_sec": {chunk_end:.1f}
+    }}
+  ]
+}}
+"""

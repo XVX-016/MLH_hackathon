@@ -1,87 +1,106 @@
-# videograph
+# VideoGraph 🎥🕸️
 
+> Grounded study companion that transforms video and audio into verified knowledge graphs, flashcards, and cited Q&A.
+
+[![CI](https://github.com/XVX-016/MLH_hackathon/actions/workflows/ci.yml/badge.svg)](https://github.com/XVX-016/MLH_hackathon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688.svg)](https://fastapi.tiangolo.com)
-[![Pydantic v2](https://img.shields.io/badge/Pydantic-v2-E92063.svg)](https://docs.pydantic.dev)
 
-**videograph** transforms any video into:
-1. **Timestamped Verbatim Transcript** (divided into spoken cue segments)
-2. **Chronological Video Chapters & Executive Summary**
-3. **Evidence-Grounded Knowledge Graph** (where **EVERY single edge** carries an exact quote, `[MM:SS]` start/end timestamps, and verification confidence)
-4. **Grounded Q&A Engine** with `[MM:SS]` citations rigorously verified against the transcript via RapidFuzz + FAISS semantic retrieval.
-
-## Team workflow
-
-This Hacktoberfest build uses a protected three-member workflow: **Hardik** owns
-integration and the public contract, **Tanmmay** owns media intelligence, and
-**Faariz** owns the evidence explorer. Every coding agent must first receive an
-exact name confirmation from one of those members and may edit only that owner's
-paths. The complete build order, handoff format, and acceptance criteria are in
-[docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md); the machine-checkable ownership
-map and local gate are in `team/ownership.json` and
-`tools/verify_ownership.py`.
+🌐 **Live Demo**: *[Deploy Link Placeholder]*  
+🎬 **Demo Video / Walkthrough**: *[Demo GIF / Video Placeholder]*  
+👥 **Team & Workflow**: See [docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md) for 3-member ownership boundaries, start gates, and agent skills.
 
 ---
 
-## Architecture & Package Layout
+## What It Does
 
-```
-MLH_hackathon/
-├── videograph/
-│   ├── schemas.py       # Pydantic v2 data models
-│   ├── ingest.py        # Video download (yt-dlp) & 16kHz audio extraction (ffmpeg)
-│   ├── transcribe.py    # VTT/SRT parsing & Gemini audio transcription
-│   ├── chunk.py         # Sliding window transcript chunking
-│   ├── prompts.py       # JSON-enforced prompts for LLM extraction
-│   ├── extract.py       # Summary, chapter, and edge evidence extraction
-│   ├── resolve.py       # Canonical entity deduplication & clustering
-│   ├── graph.py         # NetworkX integration & Vis.js network data serialization
-│   ├── grounding.py     # Fuzzy & semantic quote verification engine
-│   ├── qa.py            # FAISS dense retriever & grounded Q&A
-│   ├── llm.py           # Cached Gemini API calls with automatic retry
-│   └── cli.py           # Command line runner
-├── app/
-│   ├── main.py          # FastAPI application server
-│   └── static/          # Vis-network + Vanilla JS UI & modern CSS
-├── eval/
-│   └── evaluate.py      # Grounding rate and citation precision metrics
-├── tests/
-│   └── test_videograph.py # Full pytest test suite
-└── LICENSE              # MIT License
-```
+- 🗂️ **Interactive Study Flashcards**: Extracts high-yield question/answer cards featuring verbatim quote evidence and jump timestamps.
+- 🕸️ **Interactive Knowledge Graph**: Resolves entities and maps relationships in an explorable Vis.js topology with evidence modals.
+- 🎯 **Grounded Q&A with Deep Links**: Answers user questions strictly citing timestamped transcript segments `[MM:SS]`.
+- 📑 **Hierarchical Chapters & Takeaways**: Generates structured summaries with verified timestamps for quick video skimming.
+- ⚡ **Zero-API Offline Demo**: Ships with a precomputed, fully interactive demo so judges can evaluate all features without external API keys.
 
 ---
 
 ## Quickstart
 
-### 1. Set Your Environment Key
-```bash
-export GEMINI_API_KEY="your-gemini-api-key"
+### 1. Launch with Zero API Keys (Offline Demo)
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python run.py
+```
+Open **[http://localhost:8000](http://localhost:8000)** and click **"Load Demo Sample"** to instantly explore chapters, flashcards, and the knowledge graph.
+
+### 2. Live Media & URL Ingestion
+To analyze real video/audio files or YouTube URLs:
+```powershell
+$env:GEMINI_API_KEY="your-gemini-api-key"
+python run.py
+```
+- **YouTube URLs**: Paste a link (< 10 min) to fetch metadata and transcribe audio in background jobs.
+- **Media Upload**: Drop MP4, MKV, WebM, MP3, WAV, VTT, or SRT files directly into the UI.
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A[YouTube URL / Media] --> B[Ingest & Transcribe<br>yt-dlp / Gemini / Whisper]
+    B --> C[Sliding Window Chunking<br>60s window, 10s overlap]
+    C --> D[Structured LLM Extraction<br>Flashcards + Chapters]
+    C --> E[Entity Resolution & Graph<br>NetworkX + RapidFuzz]
+    D --> F[Explorer UI<br>Vis.js + 3-Tab Study View]
+    E --> F
+    F --> G[Cited Q&A<br>FAISS + RapidFuzz Quotes]
 ```
 
-### 2. Run the Web Application
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Navigate to `http://localhost:8000` to interact with the dashboard, load the built-in demo sample, or submit any video/audio/subtitles!
+---
 
-The **Load Demo Sample** button works offline and demonstrates the complete
-evidence path: chapters, transcript, grounded graph edges, and timestamp-linked
-answers. Real uploads support MP4, MKV, WebM, MP3, WAV, VTT, and SRT files up
-to 100 MB. URL ingestion is intentionally not enabled in this build; download
-media you are authorized to analyze or upload its subtitles instead.
+## Evaluation Results
 
-### 3. Run via CLI
-```bash
-# Analyze a video or subtitles file
-python -m videograph.cli analyze --input sample.mp4 --output analysis.json
+Automated benchmark evaluation run via `python -m eval.evaluate`:
 
-# Grounded Q&A against any transcript
-python -m videograph.cli qa --transcript analysis.json --query "What is the key mechanism?"
-```
+| Metric | Target | Measured Result | Status |
+| :--- | :---: | :---: | :---: |
+| **Citation Precision** | 1.00 | **1.00 (3/3 verified)** | ✅ Passing |
+| **Grounding Rate** | ≥ 0.95 | **1.00 (3/3 verified)** | ✅ Passing |
+| **Mean Quote Match Score** | ≥ 90.0 | **100.0 / 100.0** | ✅ Passing |
+| **Timestamp MAE** | ≤ 2.0s | **0.0s** | ✅ Passing |
+| **Full Pytest Suite** | 62 passed | **62 passed (100%)** | ✅ Passing |
 
-### 4. Run Pytest Suite & Evaluation Harness
-```bash
-python -m pytest tests/test_videograph.py -v
-python -m eval.evaluate
+*Details and regression outputs documented in [eval/results.md](eval/results.md).*
+
+---
+
+## Built On
+
+- **FastAPI & Uvicorn** (MIT): Async web server and background job polling endpoints.
+- **Google GenAI SDK (`gemini-2.5-flash`)** (Apache 2.0): Multimodal audio transcription and structured JSON extraction.
+- **NetworkX** (BSD-3-Clause) & **Vis.js** (MIT/Apache 2.0): Graph topology algorithms and browser visualization.
+- **RapidFuzz** (MIT) & **FAISS** (MIT): Exact/fuzzy string alignment and dense vector retrieval for verified citations.
+- **yt-dlp** (The Unlicense) & **ffmpeg**: Media metadata extraction and 16kHz mono audio normalization.
+
+---
+
+## Limitations
+
+- Video duration is capped at 10 minutes to protect token budgets and rate limits.
+- YouTube URL ingestion requires public or unlisted videos (private videos are rejected with an actionable error).
+- Video scrubber jump links require media playback support in the active browser.
+
+---
+
+## Project Structure
+
+```text
+├── app/                  # FastAPI web server and minimalist 3-tab static frontend
+├── data/demo/            # Precomputed zero-key offline demo fixtures
+├── docs/                 # Team handoff protocol and delivery documentation
+├── eval/                 # Citation precision & quote grounding benchmark suite
+├── tests/                # 62 unit and integration tests across all modules
+├── tools/                # Ownership and team boundary verification scripts
+├── videograph/           # Core library: ingest, transcribe, chunk, extract, graph, qa
+└── run.py                # Console-guided startup launcher
 ```

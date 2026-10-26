@@ -94,7 +94,7 @@ def call_llm_raw(prompt: str, model: str = "gemma-4-it") -> str:
         
         # Primary requested model is Gemma 4 / Gemini
         # If gemma-4 is requested, use gemma-4 or gemini fallback if not allowed on endpoint
-        models_to_try = [model, "gemini-2.5-flash", "gemini-1.5-flash"]
+        models_to_try = [model, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]
         last_error = None
 
         for m in models_to_try:

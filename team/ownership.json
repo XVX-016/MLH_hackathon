@@ -4,7 +4,7 @@
     ".github/**", "docs/**", "team/**", "tools/**", "app/main.py",
     "videograph/schemas.py", "videograph/cli.py", "videograph/__init__.py",
     "data/demo/**", "tests/test_app.py", "tests/test_integration.py",
-    "tests/test_videograph.py"
+    "tests/test_videograph.py", "run.py", "videograph/ingest.py"
   ],
   "Tanmmay": [
     "videograph/ingest.py", "videograph/transcribe.py", "videograph/chunk.py",

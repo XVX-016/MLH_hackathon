@@ -1,212 +1,92 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>videograph — Grounded Video Knowledge Graphs & Q&A</title>
-  <meta name="description" content="Generate timestamped transcripts, chapters, executive summaries, evidence-grounded knowledge graphs, and verified cited Q&A from any video." />
-  
-  <!-- Modern Typography -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  
-  <!-- Vis.js Network for interactive KG -->
-  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-  
-  <!-- Custom Vanilla CSS -->
-  <link rel="stylesheet" href="/static/style.css" />
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>videograph - evidence-grounded video Q&amp;A</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="dark-theme">
-  <!-- Top Navigation Header -->
   <header class="navbar">
-    <div class="nav-brand">
-      <div class="logo-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="23 7 16 12 23 17 23 7"></polygon>
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-          <circle cx="8.5" cy="12" r="2.5"></circle>
-        </svg>
-      </div>
-      <div class="brand-text">
-        <span class="brand-title">videograph</span>
-        <span class="brand-badge">Evidence-Grounded KG</span>
-      </div>
-    </div>
-    <div class="nav-actions">
-      <button id="btn-load-sample" class="btn btn-secondary">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-        Load Demo Sample
-      </button>
-      <a href="https://github.com" target="_blank" class="nav-link">MIT License</a>
-    </div>
+    <div class="nav-brand"><div class="logo-icon">VG</div><div class="brand-text"><span class="brand-title">videograph</span><span class="brand-badge">evidence-grounded</span></div></div>
+    <button id="btn-new-video" class="btn btn-secondary" type="button" hidden>New video</button>
   </header>
-
-  <!-- Main Container -->
   <main class="app-layout">
-    <!-- Ingestion Hero Bar -->
-    <section class="input-panel card glassmorphism">
-      <div class="input-header">
-        <h1>Transform Any Video into an Evidence-Grounded Knowledge Graph</h1>
-        <p class="subtitle">Verbatim timestamps, interactive graph relationships with exact quote backing, and verified [MM:SS] citation Q&A.</p>
-      </div>
-      <div class="input-controls">
-        <div class="tab-buttons">
-          <button class="tab-btn active" data-tab="tab-url" id="tab-btn-url">Video / YouTube URL</button>
-          <button class="tab-btn" data-tab="tab-upload" id="tab-btn-upload">Upload File (MP4, VTT, SRT)</button>
+    <section id="hero" class="hero" aria-labelledby="input-title">
+      <svg class="hero-grid" style="display:none;" aria-hidden="true"></svg>
+      <div id="hero-content" class="hero-content">
+        <h1 id="input-title">Find the moments that matter.</h1>
+        <p class="hero-subtitle">Turn video into a verified summary, study flashcards, and an evidence graph.</p>
+        <form id="form-url" class="hero-input">
+          <label class="visually-hidden" for="input-url">YouTube URL</label>
+          <input type="url" id="input-url" placeholder="Paste a YouTube video link" required>
+          <button type="submit" class="btn btn-primary">Explore video</button>
+        </form>
+        <p id="input-error" class="input-error hidden" role="alert"></p>
+        <div class="hero-actions">
+          <button id="btn-load-sample" class="hero-pill" type="button">Try the demo</button>
+          <button id="btn-upload" class="hero-pill" type="button">Upload a file</button>
         </div>
-        
-        <!-- URL Form -->
-        <form id="form-url" class="tab-content active">
-          <div class="input-group">
-            <span class="input-icon">🔗</span>
-            <input type="url" id="input-url" placeholder="Paste YouTube or MP4 video URL (e.g. https://www.youtube.com/watch?v=...)" required />
-            <select id="select-model-url" class="model-select">
-              <option value="gemma-4-it">Gemma 4</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            </select>
-            <button type="submit" id="btn-analyze-url" class="btn btn-primary">
-              <span>Extract & Build Graph</span>
-              <div class="spinner hidden" id="spinner-url"></div>
-            </button>
-          </div>
-        </form>
-
-        <!-- Upload Form -->
-        <form id="form-upload" class="tab-content">
-          <div class="input-group">
-            <span class="input-icon">📁</span>
-            <input type="file" id="input-file" accept=".mp4,.mkv,.webm,.mp3,.wav,.vtt,.srt" required />
-            <select id="select-model-file" class="model-select">
-              <option value="gemma-4-it">Gemma 4</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            </select>
-            <button type="submit" id="btn-analyze-upload" class="btn btn-primary">
-              <span>Process Upload</span>
-              <div class="spinner hidden" id="spinner-upload"></div>
-            </button>
-          </div>
+        <form id="form-upload" hidden>
+          <label class="visually-hidden" for="input-file">Media or subtitle file</label>
+          <input type="file" id="input-file" accept=".mp4,.mkv,.webm,.mp3,.wav,.vtt,.srt" required>
+          <label class="visually-hidden" for="select-model-file">Analysis model</label>
+          <select id="select-model-file"><option value="gemma-4-it">Gemma 4</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option></select>
+          <button type="submit">Process upload <span class="spinner hidden" id="spinner-upload"></span></button>
         </form>
       </div>
-
-      <!-- Processing Status Indicator -->
-      <div id="processing-banner" class="processing-banner hidden">
-        <div class="pulse-indicator"></div>
-        <span id="processing-status-text">Analyzing video segments with Gemini...</span>
+      <div id="processing-card" class="processing-card card" role="status" hidden>
+        <h2 id="processing-title">Analyzing video...</h2>
+        <div class="processing-progress-bar"><div class="progress-indeterminate"></div></div>
+        <div class="processing-details"><span id="processing-channel"></span><span id="processing-duration"></span></div>
+        <div id="processing-banner" class="processing-banner"><span id="processing-status-text">Processing...</span></div>
       </div>
     </section>
 
-    <!-- Workspace Dashboard Grid -->
-    <div id="dashboard" class="dashboard-grid">
-      <!-- Left Column: Video Summary, Chapters & Transcript -->
-      <section class="left-panel">
-        <!-- Video Header Info Card -->
-        <div class="card glassmorphism video-info-card">
-          <div class="card-header">
-            <h2 id="video-title" class="video-title">Select or upload a video to begin</h2>
-            <span id="video-duration-badge" class="badge">00:00</span>
-          </div>
-          <div class="summary-box">
-            <h3>Executive Summary</h3>
-            <p id="video-summary" class="summary-text">No summary loaded yet.</p>
-          </div>
-        </div>
+    <div id="results" class="results-view" hidden>
+    <section class="card glassmorphism video-info-card" aria-labelledby="video-title">
+      <p class="section-eyebrow">YOUR STUDY SPACE</p>
+      <div class="card-header"><h2 id="video-title" class="video-title">Select or upload a video to begin</h2><span id="video-duration-badge" class="badge">00:00</span></div>
+      <video id="video-player" class="video-player hidden" controls preload="metadata" aria-label="Video player"></video>
+      <iframe id="youtube-player" class="video-player hidden" title="YouTube video player" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+      <div id="video-player-placeholder" class="media-empty"><p>Playback is unavailable for this result. Explore its timestamped transcript instead.</p><button id="btn-view-transcript" class="btn btn-secondary" type="button">Browse transcript <span aria-hidden="true">↗</span></button></div>
+    </section>
 
-        <!-- Chapters Card -->
-        <div class="card glassmorphism">
-          <div class="card-header">
-            <h3>Video Chapters</h3>
-            <span class="badge" id="chapters-count">0 Chapters</span>
-          </div>
-          <div id="chapters-list" class="chapters-container">
-            <p class="placeholder-text">Chapters will appear here after video processing.</p>
-          </div>
-        </div>
+    <div class="study-tabs" role="tablist" aria-label="Study views">
+      <button id="tab-summary" class="study-tab active" type="button" role="tab" aria-selected="true" aria-controls="panel-summary">Summary</button>
+      <button id="tab-flashcards" class="study-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-flashcards" tabindex="-1">Flashcards</button>
+      <button id="tab-graph" class="study-tab" type="button" role="tab" aria-selected="false" aria-controls="panel-graph" tabindex="-1">Graph</button>
+    </div>
 
-        <!-- Transcript Feed Card -->
-        <div class="card glassmorphism transcript-card">
-          <div class="card-header">
-            <h3>Timestamped Transcript</h3>
-            <input type="text" id="transcript-search" class="search-input" placeholder="Search transcript..." />
-          </div>
-          <div id="transcript-list" class="transcript-scroll-area">
-            <p class="placeholder-text">Transcript segments will stream here.</p>
-          </div>
-        </div>
-      </section>
+    <section id="panel-summary" class="study-panel summary-grid" role="tabpanel" aria-labelledby="tab-summary">
+      <div class="card glassmorphism"><div class="card-header"><h3>Executive Summary</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy summary</button></div><p id="video-summary" class="summary-text">No summary loaded yet.</p></div>
+      <div class="card glassmorphism"><div class="card-header"><h3>Video Chapters</h3><span class="badge" id="chapters-count">0 Chapters</span></div><div id="chapters-list" class="chapters-container"><p class="placeholder-text">Chapters will appear here after processing.</p></div></div>
+    </section>
 
-      <!-- Center & Right Column: Interactive Knowledge Graph & Grounded Q&A -->
-      <section class="right-panel">
-        <!-- Interactive Graph Visualizer -->
-        <div class="card glassmorphism graph-card">
-          <div class="card-header graph-header">
-            <div class="graph-title-group">
-              <h3>Knowledge Graph Visualization</h3>
-              <p class="graph-subtitle">Every edge connects entities backed by exact verbatim transcript evidence</p>
-            </div>
-            <div class="graph-stats-pills">
-              <span class="pill" id="stat-nodes">0 Nodes</span>
-              <span class="pill" id="stat-edges">0 Grounded Edges</span>
-            </div>
-          </div>
+    <section id="panel-flashcards" class="study-panel card glassmorphism" role="tabpanel" aria-labelledby="tab-flashcards" hidden>
+      <div class="card-header"><h3>Study Flashcards</h3><span id="flashcards-count" class="badge">0 Cards</span></div>
+      <p class="subtitle">Flip a card to reveal its answer and transcript evidence.</p>
+      <div id="flashcards-list" class="flashcards-grid"><p class="placeholder-text">Flashcards will appear here after processing.</p></div>
+    </section>
 
-          <!-- Network Canvas -->
-          <div id="graph-network-container" class="graph-canvas-wrapper">
-            <div id="graph-network" class="graph-canvas"></div>
-          </div>
+    <section id="panel-graph" class="study-panel card glassmorphism graph-card" role="tabpanel" aria-labelledby="tab-graph" hidden>
+      <div class="card-header graph-header"><div class="graph-title-group"><h3>Knowledge Graph</h3><p class="graph-subtitle">Click an edge for evidence or a node for transcript mentions.</p></div><div class="graph-stats-pills"><span class="pill" id="stat-nodes">0 Nodes</span><span class="pill" id="stat-edges">0 Grounded Edges</span><button id="btn-graph-zoom-out" class="btn btn-secondary graph-zoom" type="button" aria-label="Zoom out">&minus;</button><button id="btn-graph-zoom-in" class="btn btn-secondary graph-zoom" type="button" aria-label="Zoom in">+</button><button id="btn-graph-reset" class="btn btn-secondary" type="button">Reset view</button></div></div>
+      <div id="graph-network-container" class="graph-canvas-wrapper"><div id="graph-network" class="graph-canvas"></div></div>
+      <div id="graph-evidence-list" class="graph-evidence-list" aria-label="Graph relationships"></div>
+      <div id="edge-evidence-drawer" class="evidence-drawer hidden"><div class="drawer-header"><div class="evidence-tag"><span class="pulse-dot"></span><strong>Evidence Inspector</strong></div><button id="btn-close-drawer" class="btn-icon" type="button" aria-label="Close evidence inspector">×</button></div><div class="drawer-content"><div class="edge-relation-label" id="inspector-relation">RELATION</div><blockquote id="inspector-quote" class="evidence-quote">Select a graph item.</blockquote><div class="evidence-meta"><span class="meta-item">Timestamp: <button id="inspector-timestamp" class="citation-pill" type="button" disabled>00:00</button></span><span class="meta-item">Confidence: <b id="inspector-confidence">100%</b></span></div><div id="inspector-mentions" class="node-mentions hidden"></div></div></div>
+    </section>
 
-          <!-- Edge Evidence Inspection Panel -->
-          <div id="edge-evidence-drawer" class="evidence-drawer hidden">
-            <div class="drawer-header">
-              <div class="evidence-tag">
-                <span class="pulse-dot"></span>
-                <strong>Edge Evidence Inspector</strong>
-              </div>
-              <button id="btn-close-drawer" class="btn-icon">×</button>
-            </div>
-            <div class="drawer-content">
-              <div class="edge-relation-label" id="inspector-relation">RELATION</div>
-              <blockquote id="inspector-quote" class="evidence-quote">"Exact quote will appear here"</blockquote>
-              <div class="evidence-meta">
-                <span class="meta-item">⏱️ Timestamp: <b id="inspector-timestamp">00:00</b></span>
-                <span class="meta-item">🎯 Verification Confidence: <b id="inspector-confidence">100%</b></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Grounded Q&A System Card -->
-        <div class="card glassmorphism qa-card">
-          <div class="card-header">
-            <div class="qa-title-group">
-              <h3>Grounded Transcript Q&A</h3>
-              <span class="badge badge-accent">FAISS + RapidFuzz Verification</span>
-            </div>
-          </div>
-          <p class="qa-subtitle">Ask any question. All answers cite verifiable [MM:SS] transcript timestamps.</p>
-          
-          <div id="qa-chat-history" class="qa-history">
-            <!-- Messages render here -->
-            <div class="qa-message system-message">
-              <span>Ready for your questions once a video is analyzed or demo sample is loaded.</span>
-            </div>
-          </div>
-
-          <form id="qa-form" class="qa-input-bar">
-            <input type="text" id="qa-input" placeholder="Ask a question about the video (e.g. How does self-attention work?)..." required />
-            <button type="submit" id="btn-ask-qa" class="btn btn-primary">
-              <span>Ask</span>
-              <div class="spinner hidden" id="spinner-qa"></div>
-            </button>
-          </form>
-        </div>
-      </section>
+    <div class="explore-grid">
+      <section class="card glassmorphism transcript-card" aria-labelledby="transcript-title"><div class="card-header"><h3 id="transcript-title">Timestamped Transcript</h3><label class="visually-hidden" for="transcript-search">Search transcript</label><input type="search" id="transcript-search" class="search-input" placeholder="Search transcript..."></div><div id="transcript-list" class="transcript-scroll-area"><p class="placeholder-text">Transcript segments will appear here.</p></div></section>
+      <section class="card glassmorphism qa-card" aria-labelledby="qa-title"><div class="card-header"><h3 id="qa-title">Grounded Q&amp;A</h3><span class="badge badge-accent">Verified citations</span></div><p class="qa-subtitle">Answers link to supporting transcript moments.</p><div id="qa-chat-history" class="qa-history" aria-live="polite"><div class="qa-message system-message">Load a demo or process a video to ask a question.</div></div><form id="qa-form" class="qa-input-bar"><label class="visually-hidden" for="qa-input">Question about the video</label><input type="text" id="qa-input" placeholder="Ask a question about the video..." required><button type="submit" id="btn-ask-qa" class="btn btn-primary">Ask <span class="spinner hidden" id="spinner-qa"></span></button></form></section>
+    </div>
     </div>
   </main>
-
-  <!-- Frontend Logic -->
-  <script type="module" src="/static/app.js"></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>

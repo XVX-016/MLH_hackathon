@@ -50,3 +50,20 @@ def test_answer_question_returns_not_found_when_no_similarity_passes(monkeypatch
 
     assert response.answer == qa.NO_CONTEXT_ANSWER
     assert response.grounded is False
+
+
+def test_answer_question_does_not_return_answer_with_unverified_citations(monkeypatch) -> None:
+    monkeypatch.setattr(qa, "get_embed_model", lambda: FakeEmbedder())
+    segments = [TranscriptSegment(id=0, start=10.0, end=15.0, text="Attention weighs relevant tokens.")]
+
+    def fake_llm(prompt, schema, model):
+        return qa.QAOutput(
+            answer="An unsupported claim [00:10].",
+            citations=[QACitation(timestamp_str="00:10", start_time=10.0, end_time=15.0, quote="Invented on Mars.")],
+        )
+
+    response = qa.answer_question("How does attention work?", segments, llm_call=fake_llm)
+
+    assert response.answer == qa.NO_CONTEXT_ANSWER
+    assert response.citations == []
+    assert response.grounded is False

@@ -1,376 +1,550 @@
-// videograph Vanilla JS frontend controller
+// Job-based explorer controller. Demo results use the same frozen API shape.
 let currentAnalysis = null;
+let currentJobId = null;
+let currentVideoUrl = null;
+let currentYoutubeId = null;
 let visNetworkInstance = null;
 
-document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
+document.addEventListener("DOMContentLoaded", function () {
   initForms();
-  initSampleLoader();
-  initDrawer();
-});
-
-// Tab switching between URL and Upload
-function initTabs() {
-  const tabs = document.querySelectorAll(".tab-btn");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      tabs.forEach((t) => t.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
-      tab.classList.add("active");
-      const targetId = tab.dataset.tab;
-      document.getElementById(targetId === "tab-url" ? "form-url" : "form-upload").classList.add("active");
+  document.getElementById("btn-load-sample").addEventListener("click", loadDemo);
+  document.getElementById("btn-new-video").addEventListener("click", resetToHero);
+  document.getElementById("btn-view-transcript").addEventListener("click", function () {
+    document.getElementById("transcript-title").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("transcript-search").focus({ preventScroll: true });
+  });
+  document.getElementById("btn-copy-summary").addEventListener("click", async function (event) {
+    var button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(currentAnalysis.summary || "");
+      button.textContent = "Copied";
+    } catch (_) {
+      button.textContent = "Copy failed";
+    }
+    setTimeout(function () { button.textContent = "Copy summary"; }, 2000);
+  });
+  document.getElementById("btn-upload").addEventListener("click", function () {
+    document.getElementById("input-file").click();
+  });
+  document.getElementById("input-file").addEventListener("change", function (event) {
+    if (event.target.files.length) document.getElementById("form-upload").requestSubmit();
+  });
+  document.getElementById("btn-close-drawer").addEventListener("click", closeEvidenceDrawer);
+  document.getElementById("btn-graph-reset").addEventListener("click", function () { if (visNetworkInstance) visNetworkInstance.fit({ padding: 40 }); });
+  [["btn-graph-zoom-in", 1.25], ["btn-graph-zoom-out", 0.8]].forEach(function (pair) {
+    document.getElementById(pair[0]).addEventListener("click", function () {
+      if (visNetworkInstance) visNetworkInstance.moveTo({ scale: visNetworkInstance.getScale() * pair[1] });
     });
   });
+  window.addEventListener("resize", function () { if (visNetworkInstance) visNetworkInstance.fit({ padding: 40 }); });
+  document.getElementById("inspector-timestamp").addEventListener("click", function (event) {
+    seekVideo(event.currentTarget.dataset.start);
+  });
+  document.getElementById("video-player").addEventListener("timeupdate", updateActiveTranscript);
+  document.querySelectorAll(".study-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () { selectTab(tab); });
+    tab.addEventListener("keydown", function (event) {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      var tabs = Array.from(document.querySelectorAll(".study-tab"));
+      var next = tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      selectTab(next);
+      next.focus();
+    });
+  });
+});
+
+function formatTime(seconds) {
+  var total = Math.max(0, Math.floor(Number(seconds) || 0));
+  return String(Math.floor(total / 60)).padStart(2, "0") + ":" + String(total % 60).padStart(2, "0");
 }
 
-// Ingestion Form Submissions
+async function readJson(response) {
+  var body = await response.json().catch(function () { return {}; });
+  if (!response.ok) throw new Error(body.detail || "Request failed");
+  return body;
+}
+
 function initForms() {
-  const urlForm = document.getElementById("form-url");
-  const uploadForm = document.getElementById("form-upload");
-
-  urlForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const url = document.getElementById("input-url").value.trim();
-    const model = document.getElementById("select-model-url").value;
-    if (!url) return;
-
-    toggleLoading("url", true, "Fetching & analyzing video source...");
-    try {
-      const formData = new FormData();
-      formData.append("url", url);
-      formData.append("model", model);
-
-      const resp = await fetch("/api/analyze/url", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.detail || "Analysis failed");
-      }
-
-      const data = await resp.json();
-      loadAnalysisData(data);
-    } catch (err) {
-      alert(`Error analyzing video: ${err.message}`);
-    } finally {
-      toggleLoading("url", false);
-    }
-  });
-
-  uploadForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const fileInput = document.getElementById("input-file");
-    const model = document.getElementById("select-model-file").value;
-    if (!fileInput.files || fileInput.files.length === 0) return;
-
-    toggleLoading("upload", true, "Uploading and transcribing file...");
-    try {
-      const formData = new FormData();
-      formData.append("file", fileInput.files[0]);
-      formData.append("model", model);
-
-      const resp = await fetch("/api/analyze/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.detail || "Upload analysis failed");
-      }
-
-      const data = await resp.json();
-      loadAnalysisData(data);
-    } catch (err) {
-      alert(`Error processing upload: ${err.message}`);
-    } finally {
-      toggleLoading("upload", false);
-    }
-  });
-
-  // QA Form
-  const qaForm = document.getElementById("qa-form");
-  qaForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = document.getElementById("qa-input");
-    const question = input.value.trim();
-    if (!question || !currentAnalysis) {
-      if (!currentAnalysis) alert("Please load or analyze a video first.");
+  document.getElementById("form-url").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var url = document.getElementById("input-url").value.trim();
+    var youtubeId = getYoutubeId(url);
+    if (!youtubeId) {
+      showInputError("Enter a valid YouTube video URL.");
       return;
     }
-
-    appendChatMessage("user", question);
-    input.value = "";
-    toggleQALoading(true);
-
+    showInputError("");
+    toggleLoading(true, "Fetching video details...", { title: "Fetching video details..." });
     try {
-      const resp = await fetch("/api/qa", {
+      updateProcessingDetails(await readJson(await fetch("/api/youtube/metadata", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          video_id: currentAnalysis.video_id,
-          question: question,
-        }),
-      });
-
-      if (!resp.ok) throw new Error("QA retrieval failed");
-      const qaResult = await resp.json();
-      appendBotResponse(qaResult);
-    } catch (err) {
-      appendChatMessage("system", `Failed to get answer: ${err.message}`);
+        body: JSON.stringify({ url: url })
+      })));
+      var formData = new FormData();
+      formData.append("url", url);
+      formData.append("model", document.getElementById("select-model-file").value);
+      var result = await readJson(await fetch("/api/analyze/url", { method: "POST", body: formData }));
+      if (result.job_id) {
+        updateProcessingDetails(result.metadata || result);
+        await waitForResult(result.job_id);
+        result = await readJson(await fetch("/result/" + result.job_id));
+      }
+      loadAnalysisData(result, null, youtubeId);
+    } catch (error) {
+      showInputError(error.message);
     } finally {
-      toggleQALoading(false);
+      toggleLoading(false);
     }
   });
-}
 
-function initSampleLoader() {
-  const btn = document.getElementById("btn-load-sample");
-  btn.addEventListener("click", async () => {
+  document.getElementById("form-upload").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var file = document.getElementById("input-file").files[0];
+    if (!file) return;
+    showInputError("");
+    toggleLoading(true, "Uploading and processing...", { title: file.name, channel: "Local upload" });
     try {
-      const resp = await fetch("/api/sample/load", { method: "POST" });
-      const data = await resp.json();
-      loadAnalysisData(data);
-    } catch (err) {
-      alert(`Could not load sample: ${err.message}`);
+      var formData = new FormData();
+      formData.append("file", file);
+      formData.append("model", document.getElementById("select-model-file").value);
+      var job = await readJson(await fetch("/process", { method: "POST", body: formData }));
+      await waitForResult(job.job_id);
+      var playable = /\.(mp4|mkv|webm|mp3|wav)$/i.test(file.name);
+      loadAnalysisData(await readJson(await fetch("/result/" + job.job_id)), playable ? URL.createObjectURL(file) : null);
+    } catch (error) {
+      showInputError("Processing failed: " + error.message);
+    } finally {
+      toggleLoading(false);
+    }
+  });
+
+  document.getElementById("qa-form").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var input = document.getElementById("qa-input");
+    var question = input.value.trim();
+    if (!question || !currentJobId) {
+      appendChatMessage("system", "Load a demo or process a video first.");
+      return;
+    }
+    input.value = "";
+    document.querySelectorAll(".qa-suggestion").forEach(function (chip) { chip.remove(); });
+    appendChatMessage("user", question);
+    document.getElementById("spinner-qa").classList.remove("hidden");
+    document.getElementById("btn-ask-qa").disabled = true;
+    try {
+      var response = await fetch("/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: currentJobId, question: question })
+      });
+      appendBotResponse(await readJson(response));
+    } catch (error) {
+      appendChatMessage("system", "Q&A failed: " + error.message);
+    } finally {
+      document.getElementById("spinner-qa").classList.add("hidden");
+      document.getElementById("btn-ask-qa").disabled = false;
     }
   });
 }
 
-function initDrawer() {
-  const closeBtn = document.getElementById("btn-close-drawer");
-  closeBtn.addEventListener("click", () => {
-    document.getElementById("edge-evidence-drawer").classList.add("hidden");
-  });
+function getYoutubeId(value) {
+  try {
+    var url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    var host = url.hostname.toLowerCase();
+    var id = host === "youtu.be" ? url.pathname.slice(1) :
+      ["youtube.com", "www.youtube.com", "m.youtube.com"].includes(host) ?
+        (url.searchParams.get("v") || url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1]) : null;
+    return /^[-\w]{11}$/.test(id || "") ? id : null;
+  } catch (_) { return null; }
 }
 
-function toggleLoading(type, isLoading, text = "") {
-  const spinner = document.getElementById(`spinner-${type}`);
-  const banner = document.getElementById("processing-banner");
-  const statusText = document.getElementById("processing-status-text");
+function showInputError(message) {
+  var element = document.getElementById("input-error");
+  element.textContent = message;
+  element.classList.toggle("hidden", !message);
+}
 
-  if (isLoading) {
-    if (spinner) spinner.classList.remove("hidden");
-    banner.classList.remove("hidden");
-    statusText.textContent = text;
-  } else {
-    if (spinner) spinner.classList.add("hidden");
-    banner.classList.add("hidden");
+function selectTab(tab) {
+  document.querySelectorAll(".study-tab").forEach(function (item) {
+    var selected = item === tab;
+    item.classList.toggle("active", selected);
+    item.setAttribute("aria-selected", String(selected));
+    item.tabIndex = selected ? 0 : -1;
+    document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+  });
+  if (tab.id === "tab-graph" && currentAnalysis) renderKnowledgeGraph(currentAnalysis.graph || { nodes: [], edges: [] });
+}
+
+async function loadDemo() {
+  try {
+    showInputError("");
+    toggleLoading(true, "Loading the offline demo...", { title: "Offline demo", channel: "Offline demo" });
+    var status = await readJson(await fetch("/status/demo_attention"));
+    if (status.status !== "completed") throw new Error("Demo result is not ready");
+    loadAnalysisData(await readJson(await fetch("/result/demo_attention")));
+  } catch (error) {
+    showInputError("Could not load demo: " + error.message);
+  } finally {
+    toggleLoading(false);
   }
 }
 
-function toggleQALoading(isLoading) {
-  const spinner = document.getElementById("spinner-qa");
-  if (isLoading) spinner.classList.remove("hidden");
-  else spinner.classList.add("hidden");
+async function waitForResult(jobId) {
+  for (;;) {
+    var status = await readJson(await fetch("/status/" + jobId));
+    updateProcessingDetails(status.metadata || status);
+    document.getElementById("processing-status-text").textContent = status.status === "queued" ? "Waiting to start..." : "Analyzing the video...";
+    if (status.status === "completed") return;
+    if (status.status === "failed") throw new Error(status.error || "Job failed");
+    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+  }
 }
 
-// Populate UI with analysis result
-function loadAnalysisData(data) {
+function updateProcessingDetails(metadata) {
+  if (metadata.title) document.getElementById("processing-title").textContent = metadata.title;
+  var details = [];
+  if (metadata.channel) details.push(metadata.channel);
+  if (metadata.duration != null) details.push(formatTime(metadata.duration));
+  document.getElementById("processing-channel").textContent = metadata.channel || "";
+  document.getElementById("processing-duration").textContent = metadata.duration != null ? formatTime(metadata.duration) : "";
+}
+
+function toggleLoading(loading, text, metadata) {
+  document.getElementById("spinner-upload").classList.toggle("hidden", !loading);
+  document.getElementById("hero-content").hidden = loading;
+  document.getElementById("processing-card").hidden = !loading;
+  if (loading) {
+    document.getElementById("processing-title").textContent = metadata?.title || "Analyzing video...";
+    document.getElementById("processing-channel").textContent = "";
+    document.getElementById("processing-duration").textContent = "";
+    if (metadata) updateProcessingDetails(metadata);
+  }
+  if (text) document.getElementById("processing-status-text").textContent = text;
+}
+
+
+function loadAnalysisData(data, videoUrl, youtubeId) {
   currentAnalysis = data;
-
-  // Title and duration
+  currentJobId = data.video_id;
+  if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
+  currentVideoUrl = videoUrl || null;
+  currentYoutubeId = youtubeId || null;
+  var player = document.getElementById("video-player");
+  player.src = videoUrl || "";
+  player.classList.toggle("hidden", !videoUrl);
+  var youtubePlayer = document.getElementById("youtube-player");
+  youtubePlayer.src = youtubeId ? "https://www.youtube.com/embed/" + youtubeId : "";
+  youtubePlayer.classList.toggle("hidden", !youtubeId);
+  document.getElementById("video-player-placeholder").classList.toggle("hidden", Boolean(videoUrl || youtubeId));
   document.getElementById("video-title").textContent = data.title || "Untitled Video";
-  const m = Math.floor(data.duration / 60);
-  const s = Math.floor(data.duration % 60);
-  document.getElementById("video-duration-badge").textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-
-  // Executive Summary
+  document.getElementById("video-duration-badge").textContent = formatTime(data.duration);
   document.getElementById("video-summary").textContent = data.summary || "No summary provided.";
-
-  // Chapters
+  document.getElementById("btn-copy-summary").disabled = !data.summary;
+  document.getElementById("transcript-search").value = "";
   renderChapters(data.chapters || []);
-
-  // Transcript
+  renderFlashcards(data.flashcards || [], data.transcript || []);
   renderTranscript(data.transcript || []);
+  document.getElementById("qa-chat-history").replaceChildren();
+  appendChatMessage("system", "Ask a question about this video.");
+  (data.flashcards || []).slice(0, 3).forEach(function (card) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "citation-pill qa-suggestion";
+    chip.textContent = card.question;
+    chip.addEventListener("click", function () {
+      document.getElementById("qa-input").value = card.question;
+      document.getElementById("qa-form").requestSubmit();
+    });
+    document.getElementById("qa-chat-history").appendChild(chip);
+  });
+  closeEvidenceDrawer();
+  selectTab(document.getElementById("tab-summary"));
+  document.getElementById("hero").hidden = true;
+  document.getElementById("results").hidden = false;
+  document.getElementById("btn-new-video").hidden = false;
+  window.scrollTo(0, 0);
+}
 
-  // Knowledge Graph
-  renderKnowledgeGraph(data.graph);
+function resetToHero() {
+  var player = document.getElementById("video-player");
+  player.pause();
+  player.removeAttribute("src");
+  if (visNetworkInstance) {
+    visNetworkInstance.destroy();
+    visNetworkInstance = null;
+  }
+  document.getElementById("youtube-player").removeAttribute("src");
+  if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
+  currentVideoUrl = null;
+  currentYoutubeId = null;
+  currentJobId = null;
+  currentAnalysis = null;
+  showInputError("");
+  document.getElementById("input-url").value = "";
+  document.getElementById("input-file").value = "";
+  document.getElementById("results").hidden = true;
+  document.getElementById("hero").hidden = false;
+  document.getElementById("btn-new-video").hidden = true;
+  document.getElementById("input-url").focus();
+}
+
+function renderFlashcards(cards, segments) {
+  cards = cards.filter(function (card) {
+    var quote = String(card.key_quote || "").toLowerCase().replace(/\s+/g, " ").trim();
+    var evidence = segments.filter(function (segment) {
+      return segment.end >= card.start_sec && segment.start <= card.end_sec;
+    }).map(function (segment) { return segment.text; }).join(" ").toLowerCase().replace(/\s+/g, " ");
+    return quote && evidence.includes(quote);
+  });
+  var container = document.getElementById("flashcards-list");
+  document.getElementById("flashcards-count").textContent = cards.length + (cards.length === 1 ? " Card" : " Cards");
+  container.replaceChildren();
+  if (!cards.length) {
+    container.innerHTML = "<p class='placeholder-text'>No flashcards with verbatim transcript evidence are available.</p>";
+    return;
+  }
+  cards.forEach(function (card) {
+    var item = document.createElement("article");
+    item.className = "flashcard";
+    item.innerHTML = "<button type='button' class='flashcard-flip' aria-pressed='false'><span class='flashcard-inner'><span class='flashcard-face flashcard-front'></span><span class='flashcard-face flashcard-back'><strong class='flashcard-answer'></strong><q class='flashcard-quote'></q></span></span></button><button type='button' class='citation-pill flashcard-jump'></button>";
+    var flip = item.querySelector(".flashcard-flip");
+    flip.setAttribute("aria-label", "Reveal answer: " + card.question);
+    item.querySelector(".flashcard-front").textContent = card.question;
+    item.querySelector(".flashcard-answer").textContent = card.answer;
+    item.querySelector(".flashcard-quote").textContent = card.key_quote || "No supporting quote provided.";
+    flip.addEventListener("click", function () {
+      var flipped = item.classList.toggle("flipped");
+      flip.setAttribute("aria-pressed", String(flipped));
+      flip.setAttribute("aria-label", (flipped ? "Show question: " : "Reveal answer: ") + card.question);
+    });
+    var jump = item.querySelector(".flashcard-jump");
+    jump.textContent = "[" + formatTime(card.start_sec) + "] Jump to evidence";
+    jump.addEventListener("click", function () { seekVideo(card.start_sec); });
+    container.appendChild(item);
+  });
 }
 
 function renderChapters(chapters) {
-  const container = document.getElementById("chapters-list");
-  const countBadge = document.getElementById("chapters-count");
-  countBadge.textContent = `${chapters.length} Chapters`;
-  container.innerHTML = "";
-
-  if (chapters.length === 0) {
-    container.innerHTML = `<p class="placeholder-text">No chapters available.</p>`;
+  var container = document.getElementById("chapters-list");
+  document.getElementById("chapters-count").textContent = chapters.length + " Chapters";
+  container.replaceChildren();
+  if (!chapters.length) {
+    container.innerHTML = "<p class='placeholder-text'>No chapters available.</p>";
     return;
   }
-
-  chapters.forEach((ch) => {
-    const item = document.createElement("div");
+  chapters.forEach(function (chapter) {
+    var start = chapter.start_sec == null ? chapter.start : chapter.start_sec;
+    var item = document.createElement("button");
+    item.type = "button";
     item.className = "chapter-item";
-    const sm = Math.floor(ch.start / 60);
-    const ss = Math.floor(ch.start % 60);
-    const timeStr = `${String(sm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-
-    item.innerHTML = `
-      <div class="chapter-title-row">
-        <span class="chapter-title">${ch.title}</span>
-        <span class="chapter-time">[${timeStr}]</span>
-      </div>
-      <p class="chapter-desc">${ch.summary}</p>
-    `;
-    item.addEventListener("click", () => {
-      scrollToTranscriptTime(ch.start);
-    });
+    item.innerHTML = "<div class='chapter-title-row'><span class='chapter-title'></span><span class='chapter-time'></span></div><p class='chapter-desc'></p>";
+    item.querySelector(".chapter-title").textContent = chapter.title;
+    item.querySelector(".chapter-time").textContent = "[" + formatTime(start) + "]";
+    item.querySelector(".chapter-desc").textContent = chapter.summary;
+    item.addEventListener("click", function () { seekVideo(start); });
     container.appendChild(item);
   });
 }
 
 function renderTranscript(segments) {
-  const container = document.getElementById("transcript-list");
-  container.innerHTML = "";
-
-  segments.forEach((seg) => {
-    const row = document.createElement("div");
+  var container = document.getElementById("transcript-list");
+  container.replaceChildren();
+  segments.forEach(function (segment) {
+    var row = document.createElement("button");
+    row.type = "button";
     row.className = "transcript-segment-row";
-    row.id = `seg-${seg.id}`;
-    row.dataset.start = seg.start;
-
-    const sm = Math.floor(seg.start / 60);
-    const ss = Math.floor(seg.start % 60);
-    const ts = `[${String(sm).padStart(2, '0')}:${String(ss).padStart(2, '0')}]`;
-
-    row.innerHTML = `
-      <span class="seg-timestamp">${ts}</span>
-      <span class="seg-text">${seg.text}</span>
-    `;
+    row.dataset.start = segment.start;
+    row.dataset.end = segment.end;
+    row.innerHTML = "<span class='seg-timestamp'></span><span class='seg-text'></span>";
+    row.querySelector(".seg-timestamp").textContent = "[" + formatTime(segment.start) + "]";
+    row.querySelector(".seg-text").textContent = segment.text;
+    row.addEventListener("click", function () { seekVideo(segment.start, false); });
     container.appendChild(row);
   });
-
-  // Filter input
-  const searchInput = document.getElementById("transcript-search");
-  searchInput.addEventListener("input", (e) => {
-    const q = e.target.value.toLowerCase();
-    document.querySelectorAll(".transcript-segment-row").forEach((row) => {
-      const txt = row.querySelector(".seg-text").textContent.toLowerCase();
-      row.style.display = txt.includes(q) ? "flex" : "none";
+  var search = document.getElementById("transcript-search");
+  search.oninput = function () {
+    var query = search.value.toLowerCase();
+    container.querySelectorAll(".transcript-segment-row").forEach(function (row) {
+      row.classList.toggle("filtered-out", !row.textContent.toLowerCase().includes(query));
     });
+  };
+}
+
+function seekVideo(seconds, scroll) {
+  var player = document.getElementById("video-player");
+  if (currentVideoUrl) {
+    player.currentTime = Number(seconds) || 0;
+    player.play().catch(function () {});
+  }
+  if (currentYoutubeId) document.getElementById("youtube-player").src =
+    "https://www.youtube.com/embed/" + currentYoutubeId + "?start=" + Math.max(0, Math.floor(Number(seconds) || 0)) + "&autoplay=1";
+  if (scroll !== false) scrollToTranscriptTime(seconds);
+}
+
+function updateActiveTranscript() {
+  var time = document.getElementById("video-player").currentTime;
+  document.querySelectorAll(".transcript-segment-row").forEach(function (row) {
+    row.classList.toggle("active", time >= Number(row.dataset.start) && time < Number(row.dataset.end));
   });
 }
 
-function scrollToTranscriptTime(timeSec) {
-  const rows = document.querySelectorAll(".transcript-segment-row");
-  for (const row of rows) {
-    const s = parseFloat(row.dataset.start);
-    if (s >= timeSec - 1.0) {
-      row.scrollIntoView({ behavior: "smooth", block: "center" });
-      row.style.backgroundColor = "rgba(99, 102, 241, 0.25)";
-      setTimeout(() => {
-        row.style.backgroundColor = "";
-      }, 1800);
-      break;
-    }
-  }
+function scrollToTranscriptTime(seconds) {
+  var rows = Array.from(document.querySelectorAll(".transcript-segment-row"));
+  var row = rows.find(function (candidate) { return Number(candidate.dataset.start) >= Number(seconds) - 1; }) || rows[rows.length - 1];
+  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-// Build Vis.js Interactive Network
 function renderKnowledgeGraph(graphData) {
-  const container = document.getElementById("graph-network");
-  const statNodes = document.getElementById("stat-nodes");
-  const statEdges = document.getElementById("stat-edges");
-
-  statNodes.textContent = `${graphData.nodes.length} Nodes`;
-  statEdges.textContent = `${graphData.edges.length} Grounded Edges`;
-
-  // Fetch Vis formatted data directly or convert locally
-  fetch(`/api/graph/${currentAnalysis.video_id}`)
-    .then((r) => r.json())
-    .then((res) => {
-      const vis = res.vis;
-      const data = {
-        nodes: new vis.DataSet(vis.nodes),
-        edges: new vis.DataSet(vis.edges),
-      };
-
-      const options = {
-        nodes: {
-          shape: "dot",
-          size: 20,
-          font: { color: "#f8fafc", size: 13, face: "Plus Jakarta Sans" },
-          borderWidth: 2,
-        },
-        edges: {
-          arrows: { to: { enabled: true, scaleFactor: 0.8 } },
-          smooth: { type: "continuous" },
-        },
-        physics: {
-          stabilization: { iterations: 120 },
-          barnesHut: { gravitationalConstant: -3000, springLength: 95 },
-        },
-        interaction: { hover: true, tooltipDelay: 150 },
-      };
-
-      if (visNetworkInstance) visNetworkInstance.destroy();
-      visNetworkInstance = new vis.Network(container, data, options);
-
-      // On Edge Select -> Display Grounding Evidence Drawer
-      visNetworkInstance.on("selectEdge", (params) => {
-        if (params.edges.length > 0) {
-          const edgeId = params.edges[0];
-          const edgeObj = vis.edges.find((e) => e.id === edgeId);
-          if (edgeObj) {
-            showEvidenceDrawer(edgeObj);
-          }
-        }
-      });
+  var container = document.getElementById("graph-network");
+  var groundedEdges = graphData.edges.filter(function (edge) { return edge.grounded; });
+  document.getElementById("stat-nodes").textContent = graphData.nodes.length + " Nodes";
+  document.getElementById("stat-edges").textContent = groundedEdges.length + " Grounded Edges";
+  var edgeList = document.getElementById("graph-evidence-list");
+  edgeList.replaceChildren();
+  var labels = new Map(graphData.nodes.map(function (node) { return [node.id, node.label]; }));
+  groundedEdges.forEach(function (edge) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "graph-relation";
+    var relation = document.createElement("span");
+    relation.textContent = (labels.get(edge.source) || edge.source) + " → " + edge.relation.replaceAll("_", " ").toLowerCase() + " → " + (labels.get(edge.target) || edge.target);
+    var time = document.createElement("span");
+    time.className = "chapter-time";
+    time.textContent = "[" + formatTime(edge.start_time) + "]";
+    button.append(relation, time);
+    button.addEventListener("click", function () { showEvidenceDrawer(edge); });
+    edgeList.appendChild(button);
+  });
+  if (!window.vis) {
+    container.replaceChildren();
+    var fallback = document.createElement("div");
+    fallback.className = "graph-fallback";
+    graphData.nodes.forEach(function (node) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = node.label;
+      button.addEventListener("click", function () { showNodeMentions(node); });
+      fallback.appendChild(button);
     });
+    container.appendChild(fallback);
+    return;
+  }
+  var degree = {};
+  groundedEdges.forEach(function (edge) { degree[edge.source] = (degree[edge.source] || 0) + 1; degree[edge.target] = (degree[edge.target] || 0) + 1; });
+  var maxDegree = Math.max(1, ...Object.values(degree));
+  var nodes = graphData.nodes.map(function (node) {
+    return Object.assign({}, node, { title: node.label, mentions: node.mentions || [], size: 14 + 14 * (degree[node.id] || 0) / maxDegree });
+  });
+  var edges = groundedEdges.map(function (edge, index) {
+    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, title: edge.relation.replaceAll("_", " ").toLowerCase(), arrows: "to", timestamp_str: formatTime(edge.start_time) });
+  });
+  var data = { nodes: new window.vis.DataSet(nodes), edges: new window.vis.DataSet(edges) };
+  if (visNetworkInstance) visNetworkInstance.destroy();
+  visNetworkInstance = new window.vis.Network(container, data, {
+    nodes: { shape: "dot", borderWidth: 1, color: { background: "#2A3A3D", border: "#4FB3A3", highlight: { background: "#4FB3A3", border: "#4FB3A3" }, hover: { background: "#34484B", border: "#4FB3A3" } }, font: { color: "#E8EAED", size: 13, face: "Inter, system-ui, sans-serif", strokeWidth: 0 } },
+    edges: { width: 1, color: { color: "#3A414A", highlight: "#4FB3A3", hover: "#9BA3AE" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } }, smooth: { type: "continuous" }, font: { size: 0 } },
+    physics: { stabilization: { iterations: 200 }, barnesHut: { gravitationalConstant: -6000, springLength: 160, avoidOverlap: 0.6 } },
+    interaction: { hover: true, tooltipDelay: 150 }
+  });
+  var network = visNetworkInstance;
+  network.once("stabilizationIterationsDone", function () {
+    network.setOptions({ physics: false });
+    network.fit({ animation: false, padding: 40 });
+  });
+  visNetworkInstance.on("selectEdge", function (event) { if (event.edges.length) showEvidenceDrawer(data.edges.get(event.edges[0])); });
+  visNetworkInstance.on("selectNode", function (event) { if (event.nodes.length) showNodeMentions(data.nodes.get(event.nodes[0])); });
 }
 
 function showEvidenceDrawer(edge) {
-  const drawer = document.getElementById("edge-evidence-drawer");
-  document.getElementById("inspector-relation").textContent = edge.label;
-  document.getElementById("inspector-quote").textContent = `“${edge.evidence_quote}”`;
-  document.getElementById("inspector-timestamp").textContent = `[${edge.timestamp_str}] (${edge.start_time.toFixed(1)}s - ${edge.end_time.toFixed(1)}s)`;
-  document.getElementById("inspector-confidence").textContent = `${Math.round(edge.confidence * 100)}% Verified Grounding`;
-  drawer.classList.remove("hidden");
-
-  // Scroll transcript to evidence quote
-  scrollToTranscriptTime(edge.start_time);
+  document.getElementById("inspector-relation").textContent = String(edge.relation || edge.label || "relation").replaceAll("_", " ").toLowerCase();
+  document.getElementById("inspector-quote").textContent = "“" + (edge.evidence_quote || "No quote") + "”";
+  var timestamp = document.getElementById("inspector-timestamp");
+  timestamp.textContent = "[" + formatTime(edge.start_time) + "] Jump to evidence";
+  timestamp.dataset.start = edge.start_time;
+  timestamp.disabled = false;
+  document.getElementById("inspector-confidence").textContent = Math.round((edge.confidence == null ? 1 : edge.confidence) * 100) + "%";
+  document.getElementById("inspector-mentions").classList.add("hidden");
+  document.getElementById("edge-evidence-drawer").classList.remove("hidden");
 }
 
-// Chat UI helpers
+function showNodeMentions(node) {
+  var label = String(node.label || node.id);
+  var terms = [label, String(node.id).replaceAll("_", " ")];
+  var mentions = (currentAnalysis && currentAnalysis.transcript || []).filter(function (segment) {
+    return terms.some(function (term) { return new RegExp("(^|\\W)" + escapeRegExp(term) + "(\\W|$)", "i").test(segment.text); });
+  });
+  var panel = document.getElementById("inspector-mentions");
+  panel.replaceChildren();
+  var heading = document.createElement("strong");
+  heading.textContent = label + " mentions";
+  panel.appendChild(heading);
+  (mentions.length ? mentions : (node.mentions || []).map(function (start) { return { start: start, text: "Graph mention" }; })).forEach(function (mention) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "node-mention";
+    button.textContent = "[" + formatTime(mention.start) + "] " + mention.text;
+    button.addEventListener("click", function () { seekVideo(mention.start); });
+    panel.appendChild(button);
+  });
+  document.getElementById("inspector-relation").textContent = "entity";
+  document.getElementById("inspector-quote").textContent = "Select a mention to seek to its transcript timestamp.";
+  document.getElementById("inspector-timestamp").disabled = true;
+  document.getElementById("inspector-timestamp").textContent = "Select a mention";
+  document.getElementById("inspector-confidence").textContent = "—";
+  panel.classList.remove("hidden");
+  document.getElementById("edge-evidence-drawer").classList.remove("hidden");
+}
+
+function escapeRegExp(value) { return value.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&"); }
+function closeEvidenceDrawer() { document.getElementById("edge-evidence-drawer").classList.add("hidden"); }
+
 function appendChatMessage(sender, text) {
-  const history = document.getElementById("qa-chat-history");
-  const msg = document.createElement("div");
-  msg.className = `qa-message ${sender}-message`;
-  msg.textContent = text;
-  history.appendChild(msg);
+  var message = document.createElement("div");
+  message.className = "qa-message " + sender + "-message";
+  message.textContent = text;
+  var history = document.getElementById("qa-chat-history");
+  history.appendChild(message);
   history.scrollTop = history.scrollHeight;
 }
 
-function appendBotResponse(qaResult) {
-  const history = document.getElementById("qa-chat-history");
-  const msg = document.createElement("div");
-  msg.className = "qa-message bot-message";
-
-  let formattedAnswer = qaResult.answer;
-
-  // Replace [MM:SS] with interactive verified clickable pills
-  if (qaResult.citations) {
-    qaResult.citations.forEach((cit) => {
-      const matchPattern = new RegExp(`\\[${cit.timestamp_str}\\]`, "g");
-      const verifiedClass = cit.verified ? "verified" : "";
-      const replacement = `<span class="citation-pill ${verifiedClass}" data-start="${cit.start_time}" title="Evidence quote: '${cit.quote}' (${cit.match_score}% verified match)">[${cit.timestamp_str}]</span>`;
-      formattedAnswer = formattedAnswer.replace(matchPattern, replacement);
-    });
+function appendBotResponse(result) {
+  var message = document.createElement("div");
+  message.className = "qa-message bot-message";
+  var answer = String(result.answer || "");
+  var citations = (result.citations || []).filter(function (item) { return item.verified; });
+  var shown = new Set();
+  var pattern = /\[(\d{2}:\d{2})\]/g;
+  var cursor = 0;
+  var match;
+  while ((match = pattern.exec(answer))) {
+    message.appendChild(document.createTextNode(answer.slice(cursor, match.index)));
+    let citation = citations.find(function (item) { return item.timestamp_str === match[1]; });
+    if (citation) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "citation-pill" + (citation.verified ? " verified" : "");
+      chip.textContent = "[" + match[1] + "]";
+      chip.title = citation.quote || "Verified transcript evidence";
+      chip.addEventListener("click", function () { seekVideo(citation.start_time); });
+      message.appendChild(chip);
+      shown.add(citation);
+    }
+    cursor = pattern.lastIndex;
   }
-
-  msg.innerHTML = formattedAnswer;
-
-  // Add click listener to citation pills
-  msg.querySelectorAll(".citation-pill").forEach((pill) => {
-    pill.addEventListener("click", () => {
-      const startTime = parseFloat(pill.dataset.start);
-      scrollToTranscriptTime(startTime);
-    });
+  message.appendChild(document.createTextNode(answer.slice(cursor)));
+  citations.filter(function (citation) { return !shown.has(citation); }).forEach(function (citation) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "citation-pill verified";
+    chip.textContent = "[" + formatTime(citation.start_time) + "]";
+    chip.title = citation.quote;
+    chip.addEventListener("click", function () { seekVideo(citation.start_time); });
+    message.appendChild(chip);
   });
-
-  history.appendChild(msg);
+  var history = document.getElementById("qa-chat-history");
+  history.appendChild(message);
   history.scrollTop = history.scrollHeight;
 }
