@@ -84,6 +84,51 @@ def test_youtube_url_rejects_exceeding_duration(monkeypatch) -> None:
         assert "exceeds" in res.json()["detail"].lower()
 
 
+def test_youtube_url_process_handles_needsupload(monkeypatch) -> None:
+    from app.main import _process_youtube_url
+    from videograph.ingest import NeedsUpload
+
+    JOBS.clear()
+    job_id = "test_needs_upload_job"
+    JOBS[job_id] = {"status": "queued"}
+
+    # Mock ingest_youtube_fallback to raise NeedsUpload
+    def mock_fail(url, **kw):
+        raise NeedsUpload("Captions unavailable", reason="no_captions")
+
+    monkeypatch.setattr("app.main.ingest_youtube_fallback", mock_fail)
+    # Mock audio fallback also failing
+    monkeypatch.setattr(
+        "app.main.download_youtube_audio",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Audio restricted")),
+    )
+
+    _process_youtube_url(job_id, "https://www.youtube.com/watch?v=mock_no_caps", "gemini-2.5-flash")
+
+    assert JOBS[job_id]["status"] == "failed"
+    assert JOBS[job_id].get("needs_upload") is True
+    assert "upload the file directly" in JOBS[job_id]["error"].lower()
+
+
+def test_upload_pipeline_validation_and_cleanup(tmp_path, monkeypatch) -> None:
+    from app.main import _process_upload
+
+    JOBS.clear()
+    job_id = "test_upload_validation_job"
+    JOBS[job_id] = {"status": "queued"}
+
+    # Uploaded media with duration exceeding 15 minutes (960s)
+    dummy_media = tmp_path / "long_upload.mp4"
+    dummy_media.write_bytes(b"dummy mp4 bytes")
+
+    monkeypatch.setattr("videograph.ingest.get_media_duration", lambda path: 960.0)
+
+    _process_upload(job_id, dummy_media, "Long Video", "gemini-2.5-flash")
+
+    assert JOBS[job_id]["status"] == "failed"
+    assert "exceeds maximum allowed 900" in JOBS[job_id]["error"]
+
+
 
 def test_cli_demo_pipeline(tmp_path) -> None:
     from videograph.cli import process_video_pipeline

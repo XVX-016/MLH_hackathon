@@ -27,11 +27,15 @@ from videograph.grounding import filter_graph
 from videograph.graph import to_vis_network_data
 from videograph.ingest import (
     MAX_VIDEO_DURATION_SEC,
+    NeedsUpload,
+    cleanup_media_files,
     download_youtube_audio,
     download_youtube_subtitles,
     fetch_youtube_metadata,
     get_media_duration,
     ingest_media,
+    ingest_youtube_fallback,
+    validate_uploaded_media,
 )
 from videograph.qa import answer_question
 from videograph.resolve import resolve_knowledge_graph
@@ -158,17 +162,15 @@ async def _save_upload(file: UploadFile, job_id: str) -> tuple[Path, str]:
 def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
     """Run the blocking pipeline after `/process` has returned its job ID."""
     JOBS[job_id]["status"] = "processing"
+    wav_path = path.with_suffix(".wav")
     try:
+        duration = validate_uploaded_media(path, max_duration_sec=MAX_VIDEO_DURATION_SEC)
         extension = path.suffix.casefold()
         if extension in {".srt", ".vtt"}:
             segments = parse_vtt_or_srt(path.read_text(encoding="utf-8"))
-            duration = segments[-1].end if segments else 0.0
         else:
-            duration = get_media_duration(str(path))
-            audio_path = ingest_media(str(path), output_wav_path=str(path.with_suffix(".wav")))
+            audio_path = ingest_media(str(path), output_wav_path=str(wav_path))
             segments = transcribe(audio_path)
-        if duration > MAX_VIDEO_DURATION_SEC:
-            raise ValueError(f"Video duration exceeds {MAX_VIDEO_DURATION_SEC:.0f} seconds")
 
         chunks = chunk_transcript(segments)
         raw_graph = extract_full_graph(chunks, segments, model=model)
@@ -193,37 +195,53 @@ def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
     except Exception as error:
         logger.exception("Job %s failed", job_id)
         JOBS[job_id] = {"status": "failed", "error": str(error), "demo": False}
+    finally:
+        # Clean up temporary converted WAV file
+        if wav_path.is_file() and wav_path != path:
+            cleanup_media_files(wav_path)
 
 
 def _process_youtube_url(job_id: str, url: str, model: str) -> None:
-    """Run pipeline for a YouTube video in background.
-
-    Uses a subtitle-first strategy:
-    1. Try downloading auto-generated/manual captions (fast, no 403 issues).
-    2. Parse the VTT/SRT into segments directly — skips audio download entirely.
-    3. Fall back to audio download + transcription only if no subtitles exist.
+    """Run pipeline for a YouTube video in background using the reliable fallback chain:
+    1. youtube-transcript-api (fast, zero download)
+    2. yt-dlp subtitle download (--skip-download)
+    3. yt-dlp audio download + transcription
+    4. If restricted or no captions, sets NeedsUpload message.
     """
     JOBS[job_id]["status"] = "processing"
+    temp_wav: Optional[str] = None
     try:
-        meta = fetch_youtube_metadata(url)
+        segments: Optional[List[Segment]] = None
+        meta: Dict[str, Any] = {}
+
+        # First attempt: zero-download fallback chain
+        try:
+            segments, meta = ingest_youtube_fallback(url, output_dir=str(UPLOAD_DIR), max_duration_sec=MAX_VIDEO_DURATION_SEC)
+        except NeedsUpload as nu:
+            logger.info("Job %s: captions unavailable (%s), trying audio fallback", job_id, nu)
+            # Second attempt: Audio download fallback
+            try:
+                temp_wav = download_youtube_audio(url, output_dir=str(UPLOAD_DIR), max_duration_sec=MAX_VIDEO_DURATION_SEC)
+                meta = fetch_youtube_metadata(url)
+                segments = transcribe(temp_wav)
+            except Exception as audio_err:
+                logger.warning("Audio download fallback also failed: %s", audio_err)
+                raise NeedsUpload(
+                    message=(
+                        "Captions and audio could not be extracted automatically. "
+                        "Please upload the file directly or paste its transcript."
+                    ),
+                    reason=str(audio_err),
+                ) from audio_err
+
         title = meta.get("title", "YouTube Analysis")
         duration = meta.get("duration", 0.0)
-
-        # --- Subtitle-first path (preferred) ---
-        sub_path = download_youtube_subtitles(url, output_dir=str(UPLOAD_DIR))
-        if sub_path:
-            logger.info("Job %s: using subtitles from %s", job_id, sub_path)
-            sub_content = Path(sub_path).read_text(encoding="utf-8", errors="replace")
-            segments = parse_vtt_or_srt(sub_content)
-        else:
-            # --- Audio fallback ---
-            logger.info("Job %s: no subtitles found, falling back to audio download", job_id)
-            wav_path = download_youtube_audio(url, output_dir=str(UPLOAD_DIR))
-            duration = duration or get_media_duration(wav_path)
-            segments = transcribe(wav_path)
+        if segments and not duration:
+            duration = segments[-1].end
 
         if duration > MAX_VIDEO_DURATION_SEC:
-            raise ValueError(f"Video duration ({duration:.1f}s) exceeds {MAX_VIDEO_DURATION_SEC:.0f}s limit")
+            mins = int(MAX_VIDEO_DURATION_SEC // 60)
+            raise ValueError(f"Video duration ({duration:.1f}s) exceeds {MAX_VIDEO_DURATION_SEC:.0f}s ({mins} min) limit")
 
         chunks = chunk_transcript(segments)
         raw_graph = extract_full_graph(chunks, segments, model=model)
@@ -245,9 +263,20 @@ def _process_youtube_url(job_id: str, url: str, model: str) -> None:
             ),
             "demo": False,
         }
+    except NeedsUpload as nu:
+        logger.warning("YouTube job %s requires direct upload: %s", job_id, nu)
+        JOBS[job_id] = {
+            "status": "failed",
+            "error": str(nu),
+            "needs_upload": True,
+            "demo": False,
+        }
     except Exception as error:
         logger.exception("YouTube job %s failed", job_id)
         JOBS[job_id] = {"status": "failed", "error": str(error), "demo": False}
+    finally:
+        if temp_wav:
+            cleanup_media_files(temp_wav)
 
 
 

@@ -1,6 +1,6 @@
 """Low-level LLM client and hashing cache for videograph.
 
-Uses Gemini API (gemma-4-it / gemini-2.5-flash / gemini-1.5-flash fallback) with:
+Uses Gemini API with:
 1. Exact disk/memory caching based on SHA256 of prompt + model + config.
 2. Structured JSON response enforcement.
 3. Automatic single retry on JSON parse or Pydantic validation failure.
@@ -79,7 +79,7 @@ def _extract_json_substring(text: str) -> str:
     return stripped
 
 
-def call_llm_raw(prompt: str, model: str = "gemma-4-it") -> str:
+def call_llm_raw(prompt: str, model: str = "gemini-2.5-flash") -> str:
     """Call Google GenAI SDK with environment key and content caching."""
     cache_key = compute_cache_key(prompt, model)
     cached = read_cache(cache_key)
@@ -101,7 +101,7 @@ def call_llm_raw(prompt: str, model: str = "gemma-4-it") -> str:
         # Primary requested model is Gemma 4 / Gemini
         import time
 
-        models_to_try = [model, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.5-flash"]
+        models_to_try = [model, "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
         last_error = None
 
         for m in models_to_try:
@@ -134,7 +134,7 @@ def call_llm_raw(prompt: str, model: str = "gemma-4-it") -> str:
 def call_llm_json(
     prompt: str,
     schema_cls: Type[T],
-    model: str = "gemma-4-it",
+    model: str = "gemini-2.5-flash",
     max_retries: int = 1,
 ) -> T:
     """Execute LLM call and validate against Pydantic schema with one retry."""

@@ -1,19 +1,42 @@
 """Video and audio ingestion module for videograph.
 
 Converts input audio/video to 16kHz mono WAV using ffmpeg.
-Rejects media files whose duration exceeds 10 minutes (600 seconds).
+Rejects media files whose duration exceeds 15 minutes (900 seconds).
 """
 
 from __future__ import annotations
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import imageio_ffmpeg
 
-MAX_VIDEO_DURATION_SEC = 600.0  # 10 minutes max
+from videograph.schemas import Segment
+
+MAX_VIDEO_DURATION_SEC = 900.0  # 15 minutes max
+MAX_MEDIA_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB max
+ALLOWED_MEDIA_EXTENSIONS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4a",
+    ".mp3", ".wav", ".aac", ".ogg", ".flac", ".srt", ".vtt"
+}
+
+
+class NeedsUpload(Exception):
+    """Raised when URL captions cannot be fetched and direct upload or transcript paste is needed."""
+
+    def __init__(
+        self,
+        message: str = (
+            "No captions or subtitles could be extracted from this YouTube video. "
+            "Please upload the audio/video file directly or paste a transcript."
+        ),
+        reason: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.reason = reason
 
 
 def get_ffmpeg_binary() -> str:
@@ -73,8 +96,9 @@ def ingest_media(
 
     duration = get_media_duration(input_path)
     if duration > max_duration_sec:
+        mins = int(max_duration_sec // 60)
         raise ValueError(
-            f"File duration ({duration:.1f}s) exceeds maximum allowed {max_duration_sec:.1f}s (10 minutes)."
+            f"File duration ({duration:.1f}s) exceeds maximum allowed {max_duration_sec:.1f}s ({mins} minutes)."
         )
 
     if not output_wav_path:
@@ -215,9 +239,10 @@ def download_youtube_subtitles(
     """
     meta = fetch_youtube_metadata(url)
     if meta["duration"] > max_duration_sec:
+        mins = int(max_duration_sec // 60)
         raise ValueError(
             f"YouTube video duration ({meta['duration']:.0f}s) exceeds maximum "
-            f"allowed {max_duration_sec:.0f}s (10 minutes)."
+            f"allowed {max_duration_sec:.0f}s ({mins} minutes)."
         )
 
     out_dir = Path(output_dir)
@@ -280,9 +305,10 @@ def download_youtube_audio(
     """
     meta = fetch_youtube_metadata(url)
     if meta["duration"] > max_duration_sec:
+        mins = int(max_duration_sec // 60)
         raise ValueError(
             f"YouTube video duration ({meta['duration']:.0f}s) exceeds maximum "
-            f"allowed {max_duration_sec:.0f}s (10 minutes)."
+            f"allowed {max_duration_sec:.0f}s ({mins} minutes)."
         )
 
     out_dir = Path(output_dir)
@@ -313,4 +339,222 @@ def download_youtube_audio(
     raw_path = str(downloaded[-1])
     wav_path = str(out_dir / f"{safe_stem}_16k_mono.wav")
     return ingest_media(raw_path, output_wav_path=wav_path, max_duration_sec=max_duration_sec)
+
+
+def extract_youtube_video_id(url: str) -> Optional[str]:
+    """Extract standard 11-char YouTube video ID from diverse URL formats."""
+    patterns = [
+        r"(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/)([a-zA-Z0-9_-]{11})",
+        r"^([a-zA-Z0-9_-]{11})$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def fetch_youtube_transcript_api(
+    url: str,
+    languages: Optional[List[str]] = None,
+) -> List[Segment]:
+    """Attempt caption extraction via youtube-transcript-api.
+
+    Returns:
+        List of Segment objects with timestamps.
+
+    Raises:
+        NeedsUpload: If captions are unavailable, disabled, or video is restricted.
+    """
+    video_id = extract_youtube_video_id(url)
+    if not video_id:
+        raise NeedsUpload(
+            message=f"Could not parse YouTube video ID from URL: {url}",
+            reason="invalid_url",
+        )
+
+    langs = languages or ["en", "en-US", "en-GB", "a.en"]
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        # Newer versions support .get_transcript directly on instance or class
+        if hasattr(api, "get_transcript"):
+            raw_entries = api.get_transcript(video_id, languages=langs)
+        else:
+            raw_entries = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
+
+        segments: List[Segment] = []
+        for idx, entry in enumerate(raw_entries):
+            text = (entry.get("text") or "").strip()
+            if not text:
+                continue
+            start = float(entry.get("start", 0.0))
+            duration = float(entry.get("duration", 0.0))
+            end = max(start + duration, start + 0.1)
+            segments.append(
+                Segment(
+                    id=idx,
+                    start=round(start, 3),
+                    end=round(end, 3),
+                    text=text,
+                )
+            )
+
+        if not segments:
+            raise NeedsUpload(
+                message="YouTube transcript was empty.",
+                reason="empty_transcript",
+            )
+        return segments
+
+    except NeedsUpload:
+        raise
+    except Exception as exc:
+        raise NeedsUpload(
+            message=f"youtube-transcript-api could not fetch captions ({exc}).",
+            reason=str(exc),
+        ) from exc
+
+
+def ingest_youtube_fallback(
+    url: str,
+    output_dir: Optional[str] = None,
+    max_duration_sec: float = MAX_VIDEO_DURATION_SEC,
+) -> Tuple[List[Segment], dict]:
+    """Execute reliable URL ingestion fallback chain:
+
+    1. Fetch captions via youtube-transcript-api.
+    2. Fall back to yt-dlp subtitle download without downloading media.
+    3. If both fail or video is private/age-restricted/lacks captions, raise NeedsUpload.
+
+    Returns:
+        Tuple of (List[Segment], metadata_dict).
+
+    Raises:
+        ValueError: If video exceeds duration limit.
+        NeedsUpload: When no captions can be extracted without manual upload.
+    """
+    # 0. Check video metadata and duration
+    try:
+        meta = fetch_youtube_metadata(url)
+    except Exception as exc:
+        err_msg = str(exc).lower()
+        if "private" in err_msg or "unavailable" in err_msg or "sign in" in err_msg or "age" in err_msg:
+            raise NeedsUpload(
+                message=(
+                    "This YouTube video is private, age-restricted, or requires login. "
+                    "Please upload the video/audio file or paste the transcript directly."
+                ),
+                reason="restricted_video",
+            ) from exc
+        raise
+
+    duration = meta.get("duration", 0.0)
+    if duration > max_duration_sec:
+        mins = int(max_duration_sec // 60)
+        raise ValueError(
+            f"YouTube video duration ({duration:.0f}s) exceeds maximum allowed {max_duration_sec:.0f}s ({mins} minutes)."
+        )
+
+    # Step 1: youtube-transcript-api
+    try:
+        segments = fetch_youtube_transcript_api(url)
+        if segments:
+            return segments, meta
+    except NeedsUpload:
+        pass
+
+    # Step 2: yt-dlp subtitle extraction (without downloading video)
+    from videograph.transcribe import parse_vtt_or_srt
+    dest_dir = output_dir or os.path.join(str(Path.home()), ".videograph_cache", "subtitles")
+    try:
+        sub_path = download_youtube_subtitles(url, output_dir=dest_dir, max_duration_sec=max_duration_sec)
+        if sub_path and os.path.exists(sub_path):
+            content = Path(sub_path).read_text(encoding="utf-8", errors="replace")
+            segments = parse_vtt_or_srt(content)
+            if segments:
+                return segments, meta
+    except Exception:
+        pass
+
+    # Step 3: Neither caption source worked -> raise typed NeedsUpload
+    raise NeedsUpload(
+        message=(
+            f"No automated or community captions found for '{meta.get('title', 'this video')}'. "
+            "Please upload the file directly or paste its transcript."
+        ),
+        reason="no_captions_available",
+    )
+
+
+def validate_uploaded_media(
+    file_path: Union[str, Path],
+    max_duration_sec: float = MAX_VIDEO_DURATION_SEC,
+    max_size_bytes: int = MAX_MEDIA_FILE_SIZE_BYTES,
+) -> float:
+    """Validate uploaded media file:
+
+    1. Checks file existence and extension.
+    2. Enforces maximum file size limit.
+    3. Validates actual media type/header and duration via ffmpeg probe.
+    4. Rejects media over max_duration_sec (default 15 minutes / 900s).
+
+    Returns:
+        Duration in seconds if valid.
+
+    Raises:
+        FileNotFoundError: If file does not exist.
+        ValueError: If extension, file size, media type, or duration is invalid.
+    """
+    path = Path(file_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"File not found: {path}")
+
+    # Check extension
+    ext = path.suffix.casefold()
+    if ext not in ALLOWED_MEDIA_EXTENSIONS:
+        allowed_str = ", ".join(sorted(ALLOWED_MEDIA_EXTENSIONS))
+        raise ValueError(f"Unsupported file extension '{ext}'. Allowed extensions: {allowed_str}")
+
+    # Check file size limit
+    size = path.stat().st_size
+    if size == 0:
+        raise ValueError("Uploaded file is empty (0 bytes).")
+    if size > max_size_bytes:
+        max_mb = max_size_bytes / (1024 * 1024)
+        curr_mb = size / (1024 * 1024)
+        raise ValueError(f"File size ({curr_mb:.1f} MB) exceeds maximum allowed limit ({max_mb:.0f} MB).")
+
+    # If it is a subtitle file, duration is verified by parser
+    if ext in {".srt", ".vtt"}:
+        from videograph.transcribe import parse_vtt_or_srt
+        segments = parse_vtt_or_srt(path.read_text(encoding="utf-8", errors="replace"))
+        duration = segments[-1].end if segments else 0.0
+    else:
+        # Check actual media container / stream via ffmpeg probe
+        duration = get_media_duration(str(path))
+        if duration <= 0.0:
+            raise ValueError(f"Could not parse valid audio/video stream from '{path.name}'. Corrupted or invalid media.")
+
+    if duration > max_duration_sec:
+        mins = int(max_duration_sec // 60)
+        raise ValueError(f"Video duration ({duration:.1f}s) exceeds maximum allowed {max_duration_sec:.0f}s ({mins} minutes).")
+
+    return duration
+
+
+def cleanup_media_files(*file_paths: Union[str, Path, None]) -> None:
+    """Safely remove temporary or intermediate media files, ignoring missing paths."""
+    for p in file_paths:
+        if not p:
+            continue
+        try:
+            path = Path(p)
+            if path.is_file():
+                path.unlink(missing_ok=True)
+            elif path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+
 

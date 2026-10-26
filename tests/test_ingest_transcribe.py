@@ -44,15 +44,15 @@ def test_ingest_converts_to_16k_mono_wav(tmp_path):
         assert w.getframerate() == 16000
 
 
-def test_ingest_rejects_files_over_10_minutes(tmp_path):
+def test_ingest_rejects_files_over_15_minutes(tmp_path):
     src_wav = str(tmp_path / "sample_long.wav")
     create_dummy_wav(src_wav, duration_sec=1.0)
 
-    # Mock get_media_duration to simulate file exceeding 10 minutes (601 seconds)
-    with patch("videograph.ingest.get_media_duration", return_value=605.0):
+    # Mock get_media_duration to simulate file exceeding 15 minutes (905 seconds)
+    with patch("videograph.ingest.get_media_duration", return_value=905.0):
         with pytest.raises(ValueError) as exc:
             ingest_media(src_wav)
-        assert "exceeds maximum allowed 600.0s (10 minutes)" in str(exc.value)
+        assert "exceeds maximum allowed 900.0s (15 minutes)" in str(exc.value)
 
 
 def test_transcribe_fake_backend(tmp_path, monkeypatch):

@@ -11,5 +11,6 @@ python-multipart==0.0.22
 python-dotenv==1.2.2
 yt-dlp>=2026.10.21
 imageio-ffmpeg==0.6.0
+youtube-transcript-api>=1.2.4
 pytest==9.0.2
 httpx==0.28.1

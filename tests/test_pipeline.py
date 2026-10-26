@@ -170,10 +170,10 @@ def test_download_youtube_audio_rejects_long_video(monkeypatch) -> None:
     import pytest
     from videograph.ingest import download_youtube_audio
 
-    # Patch fetch_youtube_metadata to return a 15-minute video
+    # Patch fetch_youtube_metadata to return a video exceeding 15 minutes (905 seconds)
     monkeypatch.setattr(
         "videograph.ingest.fetch_youtube_metadata",
-        lambda url: {"title": "Long Video", "duration": 900.0, "channel": "", "thumbnail": "", "url": url},
+        lambda url: {"title": "Long Video", "duration": 905.0, "channel": "", "thumbnail": "", "url": url},
     )
 
     with pytest.raises(ValueError, match="exceeds maximum"):
@@ -202,4 +202,147 @@ def test_parse_vtt_with_bom_and_accents() -> None:
     assert segments[1].start == 5.25
     assert segments[1].end == 9.75
     assert segments[1].text == "El procesamiento del lenguaje natural es increíble."
+
+
+# --- T1: YouTube fallback chain tests ---
+
+def test_extract_youtube_video_id() -> None:
+    from videograph.ingest import extract_youtube_video_id
+
+    assert extract_youtube_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert extract_youtube_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert extract_youtube_video_id("https://www.youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert extract_youtube_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+
+
+def test_fallback_chain_success_on_youtube_transcript_api(monkeypatch) -> None:
+    from videograph.ingest import ingest_youtube_fallback
+    from videograph.schemas import Segment
+
+    monkeypatch.setattr(
+        "videograph.ingest.fetch_youtube_metadata",
+        lambda url: {"title": "Test Video", "duration": 120.0, "channel": "TestCh", "thumbnail": "", "url": url},
+    )
+    fake_segments = [
+        Segment(id=0, start=0.0, end=4.0, text="Welcome to the video"),
+        Segment(id=1, start=4.0, end=8.0, text="Knowledge graphs explained"),
+    ]
+    monkeypatch.setattr(
+        "videograph.ingest.fetch_youtube_transcript_api",
+        lambda url, languages=None: fake_segments,
+    )
+
+    segments, meta = ingest_youtube_fallback("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert len(segments) == 2
+    assert segments[0].text == "Welcome to the video"
+    assert meta["title"] == "Test Video"
+
+
+def test_fallback_chain_success_on_ytdlp_subtitles(monkeypatch, tmp_path) -> None:
+    from videograph.ingest import ingest_youtube_fallback, NeedsUpload
+
+    monkeypatch.setattr(
+        "videograph.ingest.fetch_youtube_metadata",
+        lambda url: {"title": "Test Video", "duration": 180.0, "channel": "TestCh", "thumbnail": "", "url": url},
+    )
+    # Fail step 1
+    def mock_fail_api(url, languages=None):
+        raise NeedsUpload("No captions from API", reason="disabled")
+    monkeypatch.setattr("videograph.ingest.fetch_youtube_transcript_api", mock_fail_api)
+
+    # Succeed step 2 with mock vtt file
+    vtt_file = tmp_path / "sub.vtt"
+    vtt_file.write_text("WEBVTT\n\n1\n00:00:00.000 --> 00:00:05.000\nFallback subtitle text\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "videograph.ingest.download_youtube_subtitles",
+        lambda url, output_dir, **kw: str(vtt_file),
+    )
+
+    segments, meta = ingest_youtube_fallback("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert len(segments) == 1
+    assert segments[0].text == "Fallback subtitle text"
+
+
+def test_fallback_chain_raises_needsupload_on_no_captions(monkeypatch) -> None:
+    import pytest
+    from videograph.ingest import ingest_youtube_fallback, NeedsUpload
+
+    monkeypatch.setattr(
+        "videograph.ingest.fetch_youtube_metadata",
+        lambda url: {"title": "No Sub Video", "duration": 60.0, "channel": "TestCh", "thumbnail": "", "url": url},
+    )
+    def mock_fail_api(url, languages=None):
+        raise NeedsUpload("Disabled", reason="disabled")
+    monkeypatch.setattr("videograph.ingest.fetch_youtube_transcript_api", mock_fail_api)
+    monkeypatch.setattr("videograph.ingest.download_youtube_subtitles", lambda *a, **kw: None)
+
+    with pytest.raises(NeedsUpload) as exc:
+        ingest_youtube_fallback("https://www.youtube.com/watch?v=nocaptions12")
+    assert "upload the file directly or paste its transcript" in str(exc.value)
+
+
+def test_fallback_chain_raises_needsupload_on_private_or_restricted(monkeypatch) -> None:
+    import pytest
+    from videograph.ingest import ingest_youtube_fallback, NeedsUpload
+
+    def mock_private_meta(url):
+        raise ValueError("This video is private and unavailable without sign in.")
+    monkeypatch.setattr("videograph.ingest.fetch_youtube_metadata", mock_private_meta)
+
+    with pytest.raises(NeedsUpload) as exc:
+        ingest_youtube_fallback("https://www.youtube.com/watch?v=private12345")
+    assert "private, age-restricted, or requires login" in str(exc.value)
+
+
+# --- T2: Upload limits, media validation, cleanup tests ---
+
+def test_validate_uploaded_media_enforces_extension(tmp_path) -> None:
+    import pytest
+    from videograph.ingest import validate_uploaded_media
+
+    bad_file = tmp_path / "document.pdf"
+    bad_file.write_text("fake pdf data")
+    with pytest.raises(ValueError, match="Unsupported file extension"):
+        validate_uploaded_media(bad_file)
+
+
+def test_validate_uploaded_media_enforces_size_limit(tmp_path) -> None:
+    import pytest
+    from videograph.ingest import validate_uploaded_media
+
+    big_file = tmp_path / "giant.mp4"
+    big_file.write_bytes(b"x" * 200)  # 200 bytes
+
+    # Test with custom max_size_bytes of 100 bytes
+    with pytest.raises(ValueError, match="exceeds maximum allowed limit"):
+        validate_uploaded_media(big_file, max_size_bytes=100)
+
+
+def test_validate_uploaded_media_enforces_15_min_duration(tmp_path, monkeypatch) -> None:
+    import pytest
+    from videograph.ingest import validate_uploaded_media
+
+    media_file = tmp_path / "speech.wav"
+    media_file.write_bytes(b"dummy wav data")
+
+    # Mock get_media_duration to return 16 minutes (960 seconds)
+    monkeypatch.setattr("videograph.ingest.get_media_duration", lambda path: 960.0)
+
+    with pytest.raises(ValueError, match="exceeds maximum allowed 900"):
+        validate_uploaded_media(media_file)
+
+
+def test_cleanup_media_files(tmp_path) -> None:
+    from videograph.ingest import cleanup_media_files
+
+    f1 = tmp_path / "temp1.wav"
+    f1.write_text("audio1")
+    f2 = tmp_path / "temp2.wav"
+    f2.write_text("audio2")
+    non_existent = tmp_path / "missing.wav"
+
+    assert f1.exists() and f2.exists()
+    cleanup_media_files(f1, f2, non_existent, None)
+    assert not f1.exists() and not f2.exists()
+
 

@@ -223,7 +223,7 @@ def _transcribe_api(path: str) -> List[Segment]:
     )
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash-lite",
+        model="gemini-2.5-flash",
         contents=[uploaded_file, prompt],
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
