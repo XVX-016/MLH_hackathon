@@ -25,6 +25,7 @@ from videograph.extract import (
 )
 from videograph.grounding import filter_graph
 from videograph.graph import to_vis_network_data
+from videograph.llm import get_api_key
 from videograph.ingest import (
     MAX_VIDEO_DURATION_SEC,
     NeedsUpload,
@@ -336,6 +337,12 @@ def ask(request: AskRequest) -> QAResponse:
     job = _job_or_404(request.job_id)
     if job["status"] != "completed":
         raise HTTPException(status_code=409, detail=f"Job is {job['status']}")
+    if not get_api_key():
+        raise HTTPException(
+            status_code=503,
+            detail="Q&A needs a Gemini API key. Set GEMINI_API_KEY in .env and restart; "
+            "the summary, flashcards, and graph work without one.",
+        )
     analysis: VideoAnalysisResult = job["result"]
     return answer_question(request.question, analysis.transcript, graph=analysis.graph, model=request.model)
 

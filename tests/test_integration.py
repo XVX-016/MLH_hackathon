@@ -161,3 +161,12 @@ def test_health_reports_seekwise() -> None:
     with TestClient(app) as client:
         response = client.get("/health")
     assert response.json() == {"status": "ok", "app": "seekwise"}
+
+
+def test_ask_without_api_key_explains_instead_of_crashing(monkeypatch) -> None:
+    # get_api_key() also reads .env, so stub it rather than the environment.
+    monkeypatch.setattr("app.main.get_api_key", lambda: "")
+    with TestClient(app) as client:
+        response = client.post("/ask", json={"job_id": "demo_attention", "question": "What is attention?"})
+    assert response.status_code == 503
+    assert "GEMINI_API_KEY" in response.json()["detail"]
