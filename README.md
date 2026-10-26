@@ -11,21 +11,23 @@
 4. **Evidence-Grounded Knowledge Graph** (where **EVERY single edge** carries an exact quote, `[MM:SS]` start/end timestamps, and verification confidence)
 5. **Grounded Q&A Engine** with `[MM:SS]` citations rigorously verified against the transcript via RapidFuzz + FAISS semantic retrieval.
 
-## Frontend Experience & User Flow
+## Frontend Experience & Minimalist UI Flow
 
-The application provides a seamless, distraction-free study experience:
+VideoGraph is designed with a professional, distraction-free aesthetic featuring a sleek dark theme with a subtle geometric SVG grid background and glassmorphism elements:
 
-1. **Intuitive YouTube Ingestion Bar**:
-   - The user pastes any YouTube video link (or uses the 1-click Offline Demo / file upload fallback).
-   - VideoGraph fetches the video details (Title, Duration, Channel) and immediately starts background processing.
-2. **Interactive Results Interface**:
-   - Once ready, the dashboard features the **Video Title prominently on top**.
-   - The content is organized into **three primary tabs**:
-     - 📑 **Summary**: Executive overview, chronological chapters with `[MM:SS]` jump points, and key takeaways.
-     - 🗂️ **Flashcards**: Interactive flip cards for rapid learning—each card contains a conceptual question on the front, and on the back provides a concise explanation, supporting verbatim quote, and a clickable timestamp to jump directly to the relevant moment in the video.
-     - 🕸️ **Graph**: Interactive Vis.js knowledge graph topology mapping concepts, technologies, and verified relationships with evidence inspection modals.
-3. **Grounded Q&A Panel**:
-   - Always accessible to ask any question and receive instant answers citing exact timestamp ranges verified against transcript cues.
+1. **Minimalist Initial State (Hero Ingestion)**:
+   - On initial load, the interface is completely clean and minimalist: only the brand identity and a prominent, centered **YouTube Link Input Bar** (with quick-access pills for "Load Demo Sample" and file upload).
+   - Subtle animated SVG grid / ambient glow elements in the background give it an ultra-modern, professional engineering look.
+   - Upon submitting a YouTube link, VideoGraph immediately fetches the video details (Title, Duration, Channel) and displays an active pulse processing indicator with step-by-step progress status.
+
+2. **Transition to 3-Tab Results View**:
+   - Once processing is complete, the dashboard transitions into the full results view with the **Video Title prominently displayed on top**.
+   - The knowledge extraction is neatly divided across **three dedicated tabs**:
+     - 📑 **Summary**: Executive summary, key takeaways, and chronological video chapters with `[MM:SS]` timestamp jump links.
+     - 🗂️ **Flashcards**: Interactive 3D flip cards for rapid learning—conceptual questions on front, concise grounded answers, supporting verbatim quotes, and clickable timestamps on back.
+     - 🕸️ **Graph**: Interactive Vis.js knowledge graph topology mapping concepts, entities, and verified relationships with edge inspection drawer.
+3. **Grounded Q&A Drawer**:
+   - Accessible from any tab to query the video with verified `[MM:SS]` timestamp citations.
 
 ## Team workflow & Agent Division
 
