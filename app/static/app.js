@@ -41,6 +41,8 @@ document.addEventListener("DOMContentLoaded", function () {
     seekVideo(event.currentTarget.dataset.start);
   });
   document.getElementById("video-player").addEventListener("timeupdate", updateActiveTranscript);
+  window.addEventListener("hashchange", applyRoute);
+  if (parseRoute().jobId) applyRoute();
   document.querySelectorAll(".study-tab").forEach(function (tab) {
     tab.addEventListener("click", function () { selectTab(tab); });
     tab.addEventListener("keydown", function (event) {
@@ -177,6 +179,45 @@ function selectTab(tab) {
     document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
   });
   if (tab.id === "tab-graph" && currentAnalysis) renderKnowledgeGraph(currentAnalysis.graph || { nodes: [], edges: [] });
+  var page = tab.id.replace("tab-", "");
+  if (currentJobId) {
+    var hash = "#/" + encodeURIComponent(currentJobId) + "/" + page;
+    if (location.hash !== hash) location.hash = hash;
+    document.title = PAGE_TITLES[page] + " · " + (currentAnalysis && currentAnalysis.title || "Untitled") + " · seekwise";
+  }
+}
+
+// Hash routes: #/ is the landing page, #/<jobId>/<summary|flashcards|graph> is a result page.
+var PAGE_TITLES = { summary: "Summary", flashcards: "Flashcards", graph: "Graph" };
+
+function parseRoute() {
+  var parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  var page = PAGE_TITLES[parts[1]] ? parts[1] : "summary";
+  return { jobId: parts[0] ? decodeURIComponent(parts[0]) : null, page: page };
+}
+
+async function applyRoute() {
+  var route = parseRoute();
+  if (!route.jobId) {
+    if (!document.getElementById("results").hidden) resetToHero();
+    return;
+  }
+  if (route.jobId !== currentJobId) {
+    try {
+      toggleLoading(true, "Opening saved result...");
+      var status = await readJson(await fetch("/status/" + encodeURIComponent(route.jobId)));
+      if (status.status !== "completed") await waitForResult(route.jobId);
+      loadAnalysisData(await readJson(await fetch("/result/" + encodeURIComponent(route.jobId))), null, null, route.jobId);
+    } catch (error) {
+      history.replaceState(null, "", "#/");
+      resetToHero();
+      showInputError("That result is no longer available (" + error.message + "). Results are kept until the server restarts.");
+      return;
+    } finally {
+      toggleLoading(false);
+    }
+  }
+  selectTab(document.getElementById("tab-" + route.page));
 }
 
 async function loadDemo() {
@@ -291,6 +332,8 @@ function resetToHero() {
   document.getElementById("hero").hidden = false;
   document.getElementById("btn-new-video").hidden = true;
   document.getElementById("input-url").focus();
+  if (location.hash.length > 2) history.pushState(null, "", "#/");
+  document.title = "seekwise - find the moments that matter";
 }
 
 function renderFlashcards(cards, segments) {
