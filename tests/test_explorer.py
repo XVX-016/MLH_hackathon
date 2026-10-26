@@ -81,3 +81,40 @@ def test_demo_evaluation_has_precise_citations() -> None:
     assert report["qa"]["total_citations"] == 3
     assert report["qa"]["citation_precision"] == 1.0
     assert report["edges"]["grounding_rate"] == 1.0
+
+
+def test_brand_wordmark_and_favicon_are_served() -> None:
+    with TestClient(app) as client:
+        html = client.get("/").text
+        favicon = client.get("/static/logo.svg")
+
+    assert "<title>seekwise" in html
+    assert 'class="wordmark"' in html and "wordmark-seek" in html and "wordmark-i" in html
+    assert favicon.status_code == 200
+    assert "<svg" in favicon.text
+
+
+def test_brief_framing_uses_only_fields_in_the_result_payload() -> None:
+    javascript = Path("app/static/app.js").read_text(encoding="utf-8")
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    for element in ("brief-glance", "brief-headline", "brief-concepts", "brief-takeaways"):
+        assert f'id="{element}"' in html
+    assert "function renderBrief" in javascript
+    assert "verifiedFlashcards(data.flashcards" in javascript
+
+    with TestClient(app) as client:
+        payload = client.get("/result/demo_attention").json()
+    # The brief is derived client-side from these existing contract fields.
+    for field in ("summary", "duration", "chapters", "flashcards", "transcript", "graph", "grounding"):
+        assert field in payload
+    assert {"total_edges", "grounded_edges"} <= set(payload["grounding"])
+
+
+def test_page_routes_and_job_id_are_wired() -> None:
+    javascript = Path("app/static/app.js").read_text(encoding="utf-8")
+    assert '"hashchange", applyRoute' in javascript
+    for page in ("summary", "flashcards", "graph"):
+        assert f"{page}:" in javascript.split("var PAGE_TITLES", 1)[1].split("};", 1)[0]
+    # /ask is keyed by job id; uploads and URL jobs must pass theirs through.
+    assert "currentJobId = jobId || data.video_id" in javascript
+    assert "job_id: currentJobId" in javascript

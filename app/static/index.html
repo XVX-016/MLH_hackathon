@@ -11,11 +11,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=13">
 </head>
 <body class="dark-theme">
   <header class="navbar">
-    <a class="nav-brand" href="#/" aria-label="seekwise home"><svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="14" cy="14" r="7.5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M19.6 19.6 25 25" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path class="logo-play" d="M12.2 10.8v6.4l5-3.2-5-3.2Z"/></svg><span class="wordmark"><span class="wordmark-seek">seek</span><span class="wordmark-wise">wise</span></span></a>
+    <a class="nav-brand" href="#/" aria-label="seekwise home"><span class="wordmark" aria-hidden="true"><span class="wordmark-seek">seek</span><span class="wordmark-wise">w<span class="wordmark-i">ı</span>se</span></span></a>
     <div class="nav-actions"><button id="btn-copy-link" class="btn btn-quiet" type="button" hidden>Copy link</button><button id="btn-new-video" class="btn btn-secondary" type="button" hidden>New video</button></div>
   </header>
   <main class="app-layout">
@@ -65,7 +65,13 @@
     </div>
 
     <section id="panel-summary" class="study-panel summary-grid" role="tabpanel" aria-labelledby="tab-summary">
-      <div class="card glassmorphism"><div class="card-header"><h3>Executive Summary</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy summary</button></div><p id="video-summary" class="summary-text">No summary loaded yet.</p></div>
+      <div class="card glassmorphism brief-card"><div class="card-header"><h3>The brief</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy brief</button></div>
+        <dl id="brief-glance" class="brief-glance"></dl>
+        <p id="brief-headline" class="brief-headline"></p>
+        <p id="video-summary" class="summary-text">No summary loaded yet.</p>
+        <div id="brief-concepts-block" class="brief-block" hidden><h4>Core concepts</h4><div id="brief-concepts" class="brief-concepts"></div></div>
+        <div id="brief-takeaways-block" class="brief-block" hidden><h4>What to remember</h4><ol id="brief-takeaways" class="brief-takeaways"></ol></div>
+      </div>
       <div class="card glassmorphism"><div class="card-header"><h3>Video Chapters</h3><span class="badge" id="chapters-count">0 Chapters</span></div><div id="chapters-list" class="chapters-container"><p class="placeholder-text">Chapters will appear here after processing.</p></div></div>
     </section>
 
@@ -88,6 +94,6 @@
     </div>
     </div>
   </main>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>
