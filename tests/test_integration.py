@@ -36,3 +36,30 @@ def test_url_endpoint_explains_the_supported_path() -> None:
         response = client.post("/api/analyze/url", data={"url": "https://example.com/video.mp4"})
     assert response.status_code == 501
     assert "upload" in response.json()["detail"].lower()
+
+
+def test_cli_demo_pipeline(tmp_path) -> None:
+    from videograph.cli import process_video_pipeline
+    output_path = tmp_path / "cli_demo_output.json"
+    result = process_video_pipeline(
+        input_source="demo",
+        output_path=str(output_path),
+        use_demo=True,
+    )
+    assert result.video_id == "demo_attention"
+    assert len(result.transcript) > 0
+    assert len(result.chapters) > 0
+    assert len(result.graph.edges) > 0
+    assert output_path.exists()
+
+
+def test_cli_rejects_missing_file(tmp_path) -> None:
+    import pytest
+    from videograph.cli import process_video_pipeline
+
+    with pytest.raises(FileNotFoundError):
+        process_video_pipeline(
+            input_source=str(tmp_path / "non_existent.mp4"),
+            output_path=str(tmp_path / "out.json"),
+        )
+

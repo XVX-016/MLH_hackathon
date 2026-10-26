@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import logging
 import uuid
 from pathlib import Path
@@ -34,16 +35,6 @@ ALLOWED_UPLOAD_SUFFIXES = {".mp4", ".mkv", ".webm", ".mp3", ".wav", ".vtt", ".sr
 
 for directory in (UPLOAD_DIR, DEMO_DIR, STATIC_DIR):
     directory.mkdir(parents=True, exist_ok=True)
-
-app = FastAPI(title="videograph", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 JOBS: Dict[str, Dict[str, Any]] = {}
 
@@ -82,6 +73,23 @@ def _read_demo_results() -> None:
             JOBS[analysis.video_id] = {"status": "completed", "result": analysis, "demo": True}
         except Exception as error:  # A malformed demo must not stop service startup.
             logger.warning("Could not load demo %s: %s", path.name, error)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _read_demo_results()
+    yield
+
+
+app = FastAPI(title="videograph", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def _result_payload(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -165,9 +173,6 @@ def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
         JOBS[job_id] = {"status": "failed", "error": str(error), "demo": False}
 
 
-@app.on_event("startup")
-def load_demos() -> None:
-    _read_demo_results()
 
 
 @app.get("/", response_class=HTMLResponse)
