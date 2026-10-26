@@ -101,7 +101,12 @@ def call_llm_raw(prompt: str, model: str = "gemini-2.5-flash") -> str:
         # Primary requested model is Gemma 4 / Gemini
         import time
 
-        models_to_try = [model, "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
+        models_to_try = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite",
+            model,
+        ]
         last_error = None
 
         for m in models_to_try:
