@@ -4,5 +4,8 @@
       "source": "/(.*)",
       "destination": "/api/index"
     }
-  ]
+  ],
+  "env": {
+    "PYTHONPATH": "/var/task"
+  }
 }
