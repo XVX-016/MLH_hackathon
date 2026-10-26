@@ -121,6 +121,12 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Temporary: log registered routes at startup so they appear in Vercel function logs
+import sys as _sys
+_routes = [f"  {r.methods} {r.path}" for r in app.routes if hasattr(r, "path") and hasattr(r, "methods")]
+print(f"[seekwise] registered {len(_routes)} routes:\n" + "\n".join(_routes), file=_sys.stderr)
+
+
 
 def _result_payload(job: Dict[str, Any]) -> Dict[str, Any]:
     """Serialize one completed analysis exactly once for all result endpoints."""
