@@ -1,3 +1,5 @@
+[hidden] { display: none !important; }
+
 /* VideoGraph Calm Minimal Design Tokens & Styles */
 :root {
   --bg: #0F1114;
@@ -831,3 +833,58 @@ body { overflow-x: hidden; }
   .study-tab, .btn, .citation-pill { min-height: 40px; flex-shrink: 0; }
   .evidence-drawer { position: fixed; top: auto; right: 0; left: 0; bottom: 0; width: auto; max-width: none; max-height: 55vh; overflow-y: auto; border-radius: var(--radius) var(--radius) 0 0; z-index: 50; }
 }
+
+/* Summary layout + chapter rows */
+.summary-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+@media (max-width: 768px) { .summary-grid { grid-template-columns: 1fr; } }
+.chapters-container { max-height: none; overflow: visible; }
+.chapter-item { flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; color: var(--text); background-color: transparent; border-color: transparent; border-left: 2px solid transparent; }
+.chapter-item:hover { background-color: var(--surface-2); border-color: transparent; }
+.chapter-item:focus-visible, .chapter-item.active { border-left-color: var(--accent); }
+.chapter-title-row { display: flex; align-items: baseline; gap: 10px; }
+.chapter-time { order: -1; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 400; color: var(--muted); background: none; border: 0; padding: 0; }
+.chapter-desc { margin: 0; font-size: 13px; color: var(--muted); }
+.btn-quiet { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 6px 12px; font-size: 13px; }
+.btn-quiet:hover { color: var(--text); border-color: var(--muted); }
+
+/* Flashcard layout: whole card is the box, jump button sits inside */
+.flashcard { display: flex; flex-direction: column; gap: 8px; padding: 8px; background-color: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); min-height: 220px; }
+.flashcard-flip { display: block; flex: 1; width: 100%; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius); }
+.flashcard-inner { display: block; min-height: 170px; height: 100%; }
+.flashcard-front, .flashcard-back { border: 0; background-color: var(--surface-2); padding: 12px; gap: 8px; }
+.flashcard-front { justify-content: center; text-align: center; font-size: 15px; font-weight: 500; }
+.flashcard-front::after { content: "Click to flip"; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 12px; }
+.flashcard-back { justify-content: flex-start; }
+.flashcard-answer { font-weight: 500; }
+.flashcard-quote { font-style: italic; color: var(--muted); font-size: 13px; padding-left: 10px; border-left: 2px solid var(--accent); }
+.flashcard-jump { align-self: flex-start; margin: 0 4px 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .flashcard-inner { transform: none !important; }
+  .flashcard-back { transform: none; opacity: 0; }
+  .flashcard.flipped .flashcard-back { opacity: 1; }
+  .flashcard.flipped .flashcard-front { opacity: 0; }
+}
+
+/* Styles for JS-generated classes that had none */
+.video-title { font-size: 22px; font-weight: 600; margin: 0; }
+.media-empty { display: none; }
+.transcript-segment-row { display: flex; gap: 10px; width: 100%; padding: 6px 8px; text-align: left; font: inherit; font-size: 13px; color: var(--text); background: transparent; border: 0; border-left: 2px solid transparent; border-radius: 4px; cursor: pointer; transition: background-color var(--transition); }
+.transcript-segment-row:hover { background-color: var(--surface-2); }
+.transcript-segment-row.active { background-color: var(--surface-2); border-left-color: var(--accent); }
+.seg-timestamp { flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--muted); padding-top: 1px; }
+.seg-text { line-height: 1.5; }
+.graph-card { position: relative; }
+.graph-subtitle, .qa-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.graph-evidence-list { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.graph-relation, .node-mention { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 8px 10px; text-align: left; font: inherit; font-size: 13px; color: var(--text); background: transparent; border: 0; border-radius: 4px; cursor: pointer; transition: background-color var(--transition); }
+.graph-relation:hover, .node-mention:hover { background-color: var(--surface-2); }
+.graph-relation > :last-child { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--muted); }
+.node-mentions { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+.node-mention { justify-content: flex-start; padding: 6px 0; }
+.evidence-tag { display: flex; align-items: center; gap: 8px; }
+.pulse-dot { width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent); }
+.evidence-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--muted); }
+.meta-item { display: flex; align-items: center; gap: 6px; }
+.drawer-content { display: flex; flex-direction: column; gap: 12px; }
+.graph-fallback { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
+@media (min-width: 769px) { .graph-card .evidence-drawer { top: 92px; right: 28px; } }

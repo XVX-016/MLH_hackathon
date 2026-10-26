@@ -12,6 +12,8 @@ import sys
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+from dotenv import load_dotenv
+load_dotenv()  # Load .env so GEMINI_API_KEY is available for banner + server
 
 
 def parse_args() -> argparse.Namespace:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()  # Load .env before any module reads os.environ
+
 from contextlib import asynccontextmanager
 import logging
 import uuid

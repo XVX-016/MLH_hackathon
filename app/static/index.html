@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body class="dark-theme">
   <header class="navbar">
@@ -36,7 +36,7 @@
           <label class="visually-hidden" for="input-file">Media or subtitle file</label>
           <input type="file" id="input-file" accept=".mp4,.mkv,.webm,.mp3,.wav,.vtt,.srt" required>
           <label class="visually-hidden" for="select-model-file">Analysis model</label>
-          <select id="select-model-file"><option value="gemma-4-it">Gemma 4</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option></select>
+          <select id="select-model-file"><option value="gemma-4-it">Gemma 4</option><option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option></select>
           <button type="submit">Process upload <span class="spinner hidden" id="spinner-upload"></span></button>
         </form>
       </div>
@@ -50,7 +50,6 @@
 
     <div id="results" class="results-view" hidden>
     <section class="card glassmorphism video-info-card" aria-labelledby="video-title">
-      <p class="section-eyebrow">YOUR STUDY SPACE</p>
       <div class="card-header"><h2 id="video-title" class="video-title">Select or upload a video to begin</h2><span id="video-duration-badge" class="badge">00:00</span></div>
       <video id="video-player" class="video-player hidden" controls preload="metadata" aria-label="Video player"></video>
       <iframe id="youtube-player" class="video-player hidden" title="YouTube video player" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
@@ -87,6 +86,6 @@
     </div>
     </div>
   </main>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

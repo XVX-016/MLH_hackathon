@@ -228,6 +228,7 @@ def _transcribe_api(path: str) -> List[Segment]:
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
 
+
     text_content = (response.text or "{}").strip()
     if text_content.startswith("```"):
         text_content = re.sub(r"^```(?:json)?\s*", "", text_content)
