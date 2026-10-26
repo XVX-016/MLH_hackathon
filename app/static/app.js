@@ -195,8 +195,11 @@ async function waitForResult(jobId) {
 
 function updateProcessingDetails(metadata) {
   if (metadata.title) document.getElementById("processing-title").textContent = metadata.title;
-  if (metadata.channel) document.getElementById("processing-channel").textContent = metadata.channel;
-  if (metadata.duration != null) document.getElementById("processing-duration").textContent = formatTime(metadata.duration);
+  var details = [];
+  if (metadata.channel) details.push(metadata.channel);
+  if (metadata.duration != null) details.push(formatTime(metadata.duration));
+  document.getElementById("processing-channel").textContent = metadata.channel || "";
+  document.getElementById("processing-duration").textContent = metadata.duration != null ? formatTime(metadata.duration) : "";
 }
 
 function toggleLoading(loading, text, metadata) {
@@ -204,13 +207,14 @@ function toggleLoading(loading, text, metadata) {
   document.getElementById("hero-content").hidden = loading;
   document.getElementById("processing-card").hidden = !loading;
   if (loading) {
-    document.getElementById("processing-title").textContent = "Fetching video details...";
-    document.getElementById("processing-channel").textContent = "Channel pending";
-    document.getElementById("processing-duration").textContent = "Duration pending";
-    updateProcessingDetails(metadata || {});
+    document.getElementById("processing-title").textContent = metadata?.title || "Analyzing video...";
+    document.getElementById("processing-channel").textContent = "";
+    document.getElementById("processing-duration").textContent = "";
+    if (metadata) updateProcessingDetails(metadata);
   }
   if (text) document.getElementById("processing-status-text").textContent = text;
 }
+
 
 function loadAnalysisData(data, videoUrl, youtubeId) {
   currentAnalysis = data;

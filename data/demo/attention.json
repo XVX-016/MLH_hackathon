@@ -1,0 +1,23 @@
+{
+  "video_id": "demo_attention",
+  "title": "Attention Mechanisms Demo",
+  "duration": 24.0,
+  "summary": "A short precomputed walkthrough of Transformer attention.",
+  "transcript": [
+    {"id": 0, "start": 0.0, "end": 10.0, "text": "Transformers use multi-head self-attention mechanisms to connect tokens."},
+    {"id": 1, "start": 10.0, "end": 24.0, "text": "Scaled dot-product attention prevents saturation by dividing by the square root of dk."}
+  ],
+  "chapters": [
+    {"title": "Self-Attention", "start_sec": 0.0, "summary": "Introduces multi-head self-attention."},
+    {"title": "Attention Scaling", "start_sec": 10.0, "summary": "Explains scaled dot-product attention."}
+  ],
+  "graph": {
+    "nodes": [
+      {"id": "transformer", "label": "Transformer", "type": "Technology", "description": "Attention-based architecture."},
+      {"id": "self_attention", "label": "Self-Attention", "type": "Concept", "description": "Token relationship mechanism."}
+    ],
+    "edges": [
+      {"source": "transformer", "target": "self_attention", "relation": "USES", "evidence_quote": "Transformers use multi-head self-attention mechanisms to connect tokens.", "start_time": 0.0, "end_time": 10.0, "confidence": 1.0}
+    ]
+  }
+}

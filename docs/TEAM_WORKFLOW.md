@@ -99,11 +99,27 @@ Known limitations: <none or list>
 Next owner and unblock condition: <name + exact action>
 ```
 
-## Suggested issue cards
+## Mandatory Agent Start Gate & Ownership Rules
 
-1. **[Hardik - Done]**: Freeze contract, `Flashcard` schema, and offline demo artifact.
-2. **[Tanmmay - Done]**: YouTube URL metadata/audio ingestion and grounded flashcard extraction.
-3. **[Hardik - Active]**: Wire YouTube URL job processing in `app/main.py`.
-4. **[Faariz - Active]**: Minimalist SVG grid background and hero YouTube input bar in `app/static/`.
-5. **[Faariz - Active]**: 3-Tab results view (Summary | Flashcards with 3D flip | Vis.js Graph) with timestamp seeking.
-6. **[Hardik - Final]**: End-to-end validation, evaluation report, and hackathon submission.
+Before any coding agent generates or edits code, the human operator must send the exact confirmation phrase in the conversation:
+- `I am Hardik.`
+- `I am Tanmmay.`
+- `I am Faariz.`
+
+Agents must strictly operate within their assigned file paths defined in [`team/ownership.json`](../team/ownership.json). Before submitting a PR or handoff, verify ownership with:
+```powershell
+python tools/verify_ownership.py --member <Hardik|Tanmmay|Faariz> --base main
+```
+
+## Agent Skills & Hackathon Accelerators
+
+VideoGraph integrates with developer agent skills and protocols to accelerate delivery:
+- **Console Launcher**: `python run.py` provides immediate status, port inspection, and quick-start checklists.
+- **Ownership Verification Skill**: `python tools/verify_ownership.py --member <Name> --base HEAD` enforces strict file boundaries.
+- **Sponsor & Cloud Agent Skills**:
+  - `devrelay-sponsor-skills`: For integrating sponsor services (e.g. Gemini inference).
+  - `devrelay-challenges`: Querying event criteria, deadlines, and prize rubrics.
+  - `devrelay-offers`: Managing hackathon credits and sponsor tooling perks.
+  - `devrelay-mlh-submissions`: Managing project submissions, demos, and challenge entries.
+- **Heavy Agentic Lane Delegation**: Faariz is equipped with Codex and Claude plans to handle computationally heavy modules (entity resolution, Vis.js graph topology, RapidFuzz quote verification, FAISS semantic search, and evaluation suites).
+
