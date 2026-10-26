@@ -56,3 +56,15 @@ def test_extract_chunks_uses_cached_valid_output(tmp_path) -> None:
     cached_client = MockClient([])
     assert len(asyncio.run(extract_chunks(chunks, client=cached_client, cache_dir=tmp_path))) == 1
     assert cached_client.prompts == []
+
+
+def test_parse_vtt_or_srt_malformed_raises_error() -> None:
+    import pytest
+    from videograph.transcribe import parse_vtt_or_srt
+
+    with pytest.raises(ValueError, match="empty"):
+        parse_vtt_or_srt("")
+
+    with pytest.raises(ValueError, match="Malformed subtitle format"):
+        parse_vtt_or_srt("This is just plain text without any cues or timestamps.")
+
