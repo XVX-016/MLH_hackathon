@@ -25,6 +25,7 @@ from videograph.extract import (
 )
 from videograph.grounding import filter_graph
 from videograph.graph import to_vis_network_data
+from videograph.llm import get_api_key
 from videograph.ingest import (
     MAX_VIDEO_DURATION_SEC,
     NeedsUpload,
@@ -104,7 +105,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="videograph", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="seekwise", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -284,12 +285,12 @@ def _process_youtube_url(job_id: str, url: str, model: str) -> None:
 @app.get("/", response_class=HTMLResponse)
 def serve_index() -> HTMLResponse:
     index = STATIC_DIR / "index.html"
-    return HTMLResponse(index.read_text(encoding="utf-8")) if index.exists() else HTMLResponse("<h1>videograph</h1>")
+    return HTMLResponse(index.read_text(encoding="utf-8")) if index.exists() else HTMLResponse("<h1>seekwise</h1>")
 
 
 @app.get("/health")
 def health() -> Dict[str, str]:
-    return {"status": "ok", "app": "videograph"}
+    return {"status": "ok", "app": "seekwise"}
 
 
 @app.post("/process", status_code=202)
@@ -336,6 +337,12 @@ def ask(request: AskRequest) -> QAResponse:
     job = _job_or_404(request.job_id)
     if job["status"] != "completed":
         raise HTTPException(status_code=409, detail=f"Job is {job['status']}")
+    if not get_api_key():
+        raise HTTPException(
+            status_code=503,
+            detail="Q&A needs a Gemini API key. Set GEMINI_API_KEY in .env and restart; "
+            "the summary, flashcards, and graph work without one.",
+        )
     analysis: VideoAnalysisResult = job["result"]
     return answer_question(request.question, analysis.transcript, graph=analysis.graph, model=request.model)
 

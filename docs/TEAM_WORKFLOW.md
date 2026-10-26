@@ -1,14 +1,14 @@
-# VideoGraph: three-member delivery workflow
+# seekwise: three-member delivery workflow
 
 ## Product target & UX Flow
 
-VideoGraph converts any video, audio file, subtitles, or YouTube URL into an
+seekwise (Python package: `videograph`) converts any video, audio file, subtitles, or YouTube URL into an
 interactive, evidence-grounded study companion:
 
 1. **Minimalist Initial State**: The user sees a distraction-free hero layout with an
    ambient SVG grid / dark background and a single centered YouTube link input bar
    (plus quick pill buttons for the 1-click offline demo and file upload).
-2. **Metadata Fetch & Processing**: Upon submitting, VideoGraph fetches video details
+2. **Metadata Fetch & Processing**: Upon submitting, seekwise fetches video details
    (Title, Duration, Channel) and enters a visual progress state.
 3. **Interactive 3-Tab Presentation**: Once processing finishes, the interface
    smoothly transitions to display the **Video Title** prominently on top and renders
@@ -113,7 +113,7 @@ python tools/verify_ownership.py --member <Hardik|Tanmmay|Faariz> --base main
 
 ## Agent Skills & Hackathon Accelerators
 
-VideoGraph integrates with developer agent skills and protocols to accelerate delivery:
+seekwise integrates with developer agent skills and protocols to accelerate delivery:
 - **Console Launcher**: `python run.py` provides immediate status, port inspection, and quick-start checklists.
 - **Ownership Verification Skill**: `python tools/verify_ownership.py --member <Name> --base HEAD` enforces strict file boundaries.
 - **Sponsor & Cloud Agent Skills**:

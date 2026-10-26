@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VideoGraph launcher script.
+"""seekwise launcher script.
 
 Starts the FastAPI server with informative console output.
 """
@@ -18,7 +18,7 @@ load_dotenv()  # Load .env so GEMINI_API_KEY is available for banner + server
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Launch VideoGraph — AI-Powered Video & Media Knowledge Extractor"
+        description="Launch seekwise: find the moments that matter in any video"
     )
     parser.add_argument(
         "--host",
@@ -48,7 +48,7 @@ def display_welcome_banner(host: str, port: int) -> None:
 
     banner = f"""
 ======================================================================
-  🎥 VideoGraph — AI-Powered Video & Media Knowledge Extractor
+  seekwise: find the moments that matter in any video
 ======================================================================
 
   🚀 Dashboard URL:     {app_url}
@@ -61,7 +61,7 @@ def display_welcome_banner(host: str, port: int) -> None:
      👉 {app_url}
 
   2. Try the built-in Offline Demo:
-     Click the "Load Demo Sample" button to immediately view
+     Click the "Try the demo" button to immediately view
      timestamped chapters, verbatim evidence quotes, and an interactive
      knowledge graph without needing external APIs or downloads.
 
@@ -102,7 +102,7 @@ def main() -> None:
             reload=args.reload,
         )
     except KeyboardInterrupt:
-        print("\n👋 VideoGraph server stopped. Goodbye!", flush=True)
+        print("\nseekwise server stopped.", flush=True)
 
 
 if __name__ == "__main__":

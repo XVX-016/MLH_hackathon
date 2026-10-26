@@ -1,4 +1,4 @@
-# Dockerfile for videograph
+# Dockerfile for seekwise
 FROM python:3.11-slim
 
 # Prevent Python from writing pyc files and buffering stdout/stderr

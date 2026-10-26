@@ -1,106 +1,122 @@
-# VideoGraph 🎥🕸️
+<p align="center"><img src="docs/assets/seekwise-banner.png" alt="seekwise: find the moments that matter in any video" width="760"></p>
 
-> Grounded study companion that transforms video and audio into verified knowledge graphs, flashcards, and cited Q&A.
+<p align="center">
+  Turn a video into a short brief, study flashcards, and a knowledge graph,<br>
+  where every claim links back to the exact moment it was said.
+</p>
 
-[![CI](https://github.com/XVX-016/MLH_hackathon/actions/workflows/ci.yml/badge.svg)](https://github.com/XVX-016/MLH_hackathon/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/XVX-016/MLH_hackathon/actions/workflows/tests.yml"><img src="https://github.com/XVX-016/MLH_hackathon/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+</p>
 
-🌐 **Live Demo**: *[Deploy Link Placeholder]*  
-🎬 **Demo Video / Walkthrough**: *[Demo GIF / Video Placeholder]*  
-👥 **Team & Workflow**: See [docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md) for 3-member ownership boundaries, start gates, and agent skills.
-
----
-
-## What It Does
-
-- 🗂️ **Interactive Study Flashcards**: Extracts high-yield question/answer cards featuring verbatim quote evidence and jump timestamps.
-- 🕸️ **Interactive Knowledge Graph**: Resolves entities and maps relationships in an explorable Vis.js topology with evidence modals.
-- 🎯 **Grounded Q&A with Deep Links**: Answers user questions strictly citing timestamped transcript segments `[MM:SS]`.
-- 📑 **Hierarchical Chapters & Takeaways**: Generates structured summaries with verified timestamps for quick video skimming.
-- ⚡ **Zero-API Offline Demo**: Ships with a precomputed, fully interactive demo so judges can evaluate all features without external API keys.
+**Live demo:** _coming soon_ · **Demo video:** _coming soon_
 
 ---
 
-## Quickstart
+## What you get
 
-### 1. Launch with Zero API Keys (Offline Demo)
-```powershell
+| Page | What it shows |
+| :--- | :--- |
+| **Summary** | A one-line headline, the key numbers at a glance, core concepts, and a "What to remember" list. Each point links to its timestamp. |
+| **Flashcards** | Question/answer cards. Each answer carries the exact quote from the video that supports it. |
+| **Graph** | The ideas in the video and how they connect. Click any connection to see the quote behind it. |
+| **Q&A** | Ask anything about the video. Answers cite `[MM:SS]` moments from the transcript. |
+
+Each page has its own link (for example `/#/demo_attention/graph`), so you can share a specific view.
+
+## Try it in 2 minutes (no API key needed)
+
+Requires **Python 3.11+**.
+
+```bash
+git clone https://github.com/XVX-016/MLH_hackathon.git
+cd MLH_hackathon
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+# Windows:      .venv\Scripts\activate
+# macOS/Linux:  source .venv/bin/activate
 pip install -r requirements.txt
 python run.py
 ```
-Open **[http://localhost:8000](http://localhost:8000)** and click **"Load Demo Sample"** to instantly explore chapters, flashcards, and the knowledge graph.
 
-### 2. Live Media & URL Ingestion
-To analyze real video/audio files or YouTube URLs:
-```powershell
-$env:GEMINI_API_KEY="your-gemini-api-key"
-python run.py
-```
-- **YouTube URLs**: Paste a link (< 10 min) to fetch metadata and transcribe audio in background jobs.
-- **Media Upload**: Drop MP4, MKV, WebM, MP3, WAV, VTT, or SRT files directly into the UI.
+Open <http://localhost:8000> and click **Try the demo**. The demo is precomputed: Summary, Flashcards and Graph need no API key, and the server makes no external calls (your browser still loads fonts and the graph library from public CDNs). **Q&A needs a Gemini key** (see below); without one it tells you so.
 
----
+## Analyze your own video
 
-## How It Works
+1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY=...`. The app loads `.env` on startup. This also turns on Q&A.
+3. Run `python run.py`, then either:
+   - **Upload a file:** MP4, MKV, WebM, MP3 or WAV, up to 100 MB and 15 minutes long. Uploading a **VTT or SRT** subtitle file instead skips transcription, which makes it the fastest and most reliable option.
+   - **Paste a YouTube link:** seekwise reads the video's captions (first with youtube-transcript-api, then with yt-dlp). It does not download the video. If the video has no captions, or is private or age-restricted, the app asks you to upload the file instead.
+
+## How it works
 
 ```mermaid
 flowchart LR
-    A[YouTube URL / Media] --> B[Ingest & Transcribe<br>yt-dlp / Gemini / Whisper]
-    B --> C[Sliding Window Chunking<br>60s window, 10s overlap]
-    C --> D[Structured LLM Extraction<br>Flashcards + Chapters]
-    C --> E[Entity Resolution & Graph<br>NetworkX + RapidFuzz]
-    D --> F[Explorer UI<br>Vis.js + 3-Tab Study View]
-    E --> F
-    F --> G[Cited Q&A<br>FAISS + RapidFuzz Quotes]
+    A[Video file, subtitles,<br>or YouTube link] --> B[Get the transcript<br>captions, VTT/SRT, or Gemini]
+    B --> C[Split into overlapping<br>60s chunks]
+    C --> D[LLM extraction<br>chapters, summary, flashcards]
+    C --> E[Entities and relationships<br>NetworkX graph]
+    E --> F[Check every quote<br>against the transcript]
+    D --> F
+    F --> G[Browser app<br>Summary · Flashcards · Graph · Q&A]
 ```
 
----
+The key step is **F**: a relationship or flashcard is only shown as verified when its quote is found in the transcript at the cited time (fuzzy match with RapidFuzz). Q&A answers go through the same check.
 
-## Evaluation Results
+## Evaluation
 
-Automated benchmark evaluation run via `python -m eval.evaluate`:
+Run `python -m eval.evaluate`. Results on the bundled demo:
 
-| Metric | Target | Measured Result | Status |
-| :--- | :---: | :---: | :---: |
-| **Citation Precision** | 1.00 | **1.00 (3/3 verified)** | ✅ Passing |
-| **Grounding Rate** | ≥ 0.95 | **1.00 (3/3 verified)** | ✅ Passing |
-| **Mean Quote Match Score** | ≥ 90.0 | **100.0 / 100.0** | ✅ Passing |
-| **Timestamp MAE** | ≤ 2.0s | **0.0s** | ✅ Passing |
-| **Full Pytest Suite** | 62 passed | **62 passed (100%)** | ✅ Passing |
+| Metric | Target | Result |
+| :--- | :---: | :---: |
+| Citation precision | 1.00 | **1.00** (3/3) |
+| Graph grounding rate | ≥ 0.95 | **1.00** (3/3) |
+| Mean quote match score | ≥ 90 | **100** |
+| Timestamp error | ≤ 2 s | **0 s** |
 
-*Details and regression outputs documented in [eval/results.md](eval/results.md).*
+The demo set is small (3 edges and 3 citations), so treat these as a regression check, not a benchmark. The test suite runs with `python -m pytest tests/`.
 
----
+## Built on
 
-## Built On
+Licenses below are taken from each package's installed metadata.
 
-- **FastAPI & Uvicorn** (MIT): Async web server and background job polling endpoints.
-- **Google GenAI SDK (`gemini-2.5-flash`)** (Apache 2.0): Multimodal audio transcription and structured JSON extraction.
-- **NetworkX** (BSD-3-Clause) & **Vis.js** (MIT/Apache 2.0): Graph topology algorithms and browser visualization.
-- **RapidFuzz** (MIT) & **FAISS** (MIT): Exact/fuzzy string alignment and dense vector retrieval for verified citations.
-- **yt-dlp** (The Unlicense) & **ffmpeg**: Media metadata extraction and 16kHz mono audio normalization.
+| Library | Used for | License |
+| :--- | :--- | :--- |
+| FastAPI · Uvicorn | Web server and background jobs | MIT · BSD-3-Clause |
+| Pydantic | Data contracts and validation | MIT |
+| google-genai | Gemini transcription and extraction | Apache-2.0 |
+| NetworkX | Knowledge graph | BSD-3-Clause |
+| RapidFuzz | Quote verification | MIT |
+| sentence-transformers · faiss-cpu | Semantic search for Q&A | Apache-2.0 · MIT |
+| youtube-transcript-api · yt-dlp | YouTube captions and metadata | MIT · Unlicense |
+| imageio-ffmpeg | Bundled ffmpeg for audio conversion | BSD-2-Clause (wrapper) |
+| vis-network (browser) | Graph rendering | Apache-2.0 or MIT |
 
----
+All of these allow use in an MIT project. One thing to note: imageio-ffmpeg downloads an **ffmpeg binary that is GPL/LGPL-licensed**. Using it is fine, but if you redistribute a bundle that contains it, ffmpeg's license terms apply to that binary.
 
 ## Limitations
 
-- Video duration is capped at 10 minutes to protect token budgets and rate limits.
-- YouTube URL ingestion requires public or unlisted videos (private videos are rejected with an actionable error).
-- Video scrubber jump links require media playback support in the active browser.
+- **Length:** videos over 15 minutes and uploads over 100 MB are rejected.
+- **Language:** tested on English. YouTube subtitle download defaults to English.
+- **YouTube:** only videos with captions work from a link. YouTube also often blocks requests from cloud hosts. In both cases, upload the file or its subtitles instead.
+- **LLM errors:** some Gemini models are not available to new API keys, and busy models return 503 errors. The app retries, then falls back to other models. If all of them fail, the job fails with the error message.
+- **Memory only:** results live in server memory, so links to your own videos stop working after a restart. The demo link always works.
+
+## Project structure
+
+```text
+app/            FastAPI server (main.py) and the browser app (static/)
+videograph/     Python package: ingest, transcribe, chunk, extract, graph, grounding, qa
+data/demo/      Precomputed demo used by "Try the demo"
+eval/           Grounding and citation evaluation
+tests/          Unit and integration tests
+docs/           Team workflow and assets
+run.py          Starts the server and prints a quick-start checklist
+```
+
+The Python package is still named `videograph`, the project's original name.
 
 ---
 
-## Project Structure
-
-```text
-├── app/                  # FastAPI web server and minimalist 3-tab static frontend
-├── data/demo/            # Precomputed zero-key offline demo fixtures
-├── docs/                 # Team handoff protocol and delivery documentation
-├── eval/                 # Citation precision & quote grounding benchmark suite
-├── tests/                # 62 unit and integration tests across all modules
-├── tools/                # Ownership and team boundary verification scripts
-├── videograph/           # Core library: ingest, transcribe, chunk, extract, graph, qa
-└── run.py                # Console-guided startup launcher
-```
+Built by a three-person team. Ownership rules, the agent start gate, and the handoff process are in [docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md). Licensed under [MIT](LICENSE).
