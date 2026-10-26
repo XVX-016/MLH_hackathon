@@ -1140,3 +1140,10 @@ body.dark-theme {
 .user-message { background: #FAFAFA; color: #0A0A0A; }
 .graph-canvas-wrapper { background: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 20px 20px, #030303; }
 :focus-visible { outline-color: var(--sig-blue); }
+
+/* Transcript search, jump highlight, nav actions */
+.filtered-out { display: none; }
+.seg-text mark { background: rgba(245, 158, 11, 0.25); color: var(--text); border-radius: 3px; padding: 0 2px; }
+.transcript-segment-row.evidence-flash { animation: evidence-flash 2s ease-out; }
+@keyframes evidence-flash { 0%, 30% { background: rgba(245, 158, 11, 0.22); border-left-color: var(--sig-orange); } 100% { background: transparent; } }
+.nav-actions { display: flex; gap: 8px; }

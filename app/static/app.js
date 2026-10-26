@@ -42,6 +42,32 @@ document.addEventListener("DOMContentLoaded", function () {
   });
   document.getElementById("video-player").addEventListener("timeupdate", updateActiveTranscript);
   window.addEventListener("hashchange", applyRoute);
+  document.getElementById("btn-copy-link").addEventListener("click", async function (event) {
+    var button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(location.href);
+      button.textContent = "Link copied";
+    } catch (_) {
+      button.textContent = "Copy failed";
+    }
+    setTimeout(function () { button.textContent = "Copy link"; }, 2000);
+  });
+  // Shortcuts: 1/2/3 switch pages, / focuses Q&A, Esc closes the inspector.
+  document.addEventListener("keydown", function (event) {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "Escape") { closeEvidenceDrawer(); return; }
+    var target = event.target;
+    if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+    if (document.getElementById("results").hidden) return;
+    var tabs = { "1": "tab-summary", "2": "tab-flashcards", "3": "tab-graph" };
+    if (tabs[event.key]) {
+      event.preventDefault();
+      selectTab(document.getElementById(tabs[event.key]));
+    } else if (event.key === "/") {
+      event.preventDefault();
+      document.getElementById("qa-input").focus();
+    }
+  });
   if (parseRoute().jobId) applyRoute();
   document.querySelectorAll(".study-tab").forEach(function (tab) {
     tab.addEventListener("click", function () { selectTab(tab); });
@@ -308,6 +334,7 @@ function loadAnalysisData(data, videoUrl, youtubeId, jobId) {
   document.getElementById("hero").hidden = true;
   document.getElementById("results").hidden = false;
   document.getElementById("btn-new-video").hidden = false;
+  document.getElementById("btn-copy-link").hidden = false;
   window.scrollTo(0, 0);
 }
 
@@ -331,6 +358,7 @@ function resetToHero() {
   document.getElementById("results").hidden = true;
   document.getElementById("hero").hidden = false;
   document.getElementById("btn-new-video").hidden = true;
+  document.getElementById("btn-copy-link").hidden = true;
   document.getElementById("input-url").focus();
   if (location.hash.length > 2) history.pushState(null, "", "#/");
   document.title = "seekwise - find the moments that matter";
@@ -410,11 +438,28 @@ function renderTranscript(segments) {
     container.appendChild(row);
   });
   var search = document.getElementById("transcript-search");
+  var empty = document.createElement("p");
+  empty.className = "placeholder-text transcript-empty";
+  empty.hidden = true;
+  container.appendChild(empty);
   search.oninput = function () {
-    var query = search.value.toLowerCase();
+    var query = search.value.trim().toLowerCase();
+    var matches = 0;
     container.querySelectorAll(".transcript-segment-row").forEach(function (row) {
-      row.classList.toggle("filtered-out", !row.textContent.toLowerCase().includes(query));
+      var text = row.querySelector(".seg-text");
+      var source = text.textContent;
+      var hit = !query || source.toLowerCase().includes(query);
+      row.classList.toggle("filtered-out", !hit);
+      if (hit) matches++;
+      text.replaceChildren();
+      if (!query || !hit) { text.textContent = source; return; }
+      var index = source.toLowerCase().indexOf(query);
+      var mark = document.createElement("mark");
+      mark.textContent = source.slice(index, index + query.length);
+      text.append(source.slice(0, index), mark, source.slice(index + query.length));
     });
+    empty.hidden = matches > 0;
+    empty.textContent = "No transcript lines match “" + search.value.trim() + "”.";
   };
 }
 
@@ -437,9 +482,16 @@ function updateActiveTranscript() {
 }
 
 function scrollToTranscriptTime(seconds) {
+  var time = Number(seconds) || 0;
   var rows = Array.from(document.querySelectorAll(".transcript-segment-row"));
-  var row = rows.find(function (candidate) { return Number(candidate.dataset.start) >= Number(seconds) - 1; }) || rows[rows.length - 1];
-  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+  // The segment containing the time; otherwise the last one that starts before it.
+  var row = rows.find(function (candidate) { return time >= Number(candidate.dataset.start) && time < Number(candidate.dataset.end); }) ||
+    rows.filter(function (candidate) { return Number(candidate.dataset.start) <= time; }).pop() || rows[0];
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.remove("evidence-flash");
+  void row.offsetWidth; // restart the animation when the same row is hit twice
+  row.classList.add("evidence-flash");
 }
 
 function renderKnowledgeGraph(graphData) {
