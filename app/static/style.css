@@ -1277,34 +1277,6 @@ body.dark-theme {
 .deck > .flashcard[data-offset="1"] { opacity: 0.85; }
 .deck > .flashcard[data-offset="2"] { opacity: 0.5; }
 .evidence-drawer.node-mode .evidence-quote, .evidence-drawer.node-mode .evidence-meta { display: none; }
-
-/* ================================================================
-   Flat layer (final): one background colour, no gradients, glows,
-   dot grids, blur, gradient text or multicolour stripes anywhere.
-   ================================================================ */
-:root { --bg: #0B0B0C; --surface: #111113; --surface-2: #17171A; --glow: none; --grad: none; }
-body.dark-theme { background: var(--bg); background-attachment: scroll; }
-.navbar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 1px solid var(--border); }
-.navbar::after { content: none; }
-.hero::before, .hero::after { content: none; }
-.hero-content h1 { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--text); }
-.hero-input, .hero-input:focus-within { box-shadow: none; }
-.hero-input:focus-within, .qa-input-bar:focus-within { border-color: var(--muted); box-shadow: none; }
-.hero-pill { background: var(--surface); border: 1px solid var(--border-strong); }
-.hero-pill:hover { box-shadow: none; border-color: var(--muted); }
-.btn-primary { background: var(--text); color: var(--accent-text); }
-.btn-primary:hover:not(:disabled) { background: #FFFFFF; box-shadow: none; }
-.card, .glassmorphism, .processing-card { background: var(--surface); box-shadow: none; }
-.progress-indeterminate { background: var(--text); box-shadow: none; }
-.study-tab.active::after { background: var(--text); }
-.graph-canvas-wrapper { background: var(--bg); }
-.evidence-drawer { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
-.deck-panel { background: var(--surface); }
-.deck .flashcard-face { background: var(--surface-2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset; }
-.deck > .flashcard:not([data-offset="0"]) .flashcard-face { background: #1D1D21; }
-.brief-headline { border-image: none; border-left: 3px solid var(--text); }
-.flashcard:hover { box-shadow: none; }
-
 /* Hero scene v2: one slow waveform line and a timeline with a playhead */
 .hero-grid.hero-scene { -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); }
 .scene-line { fill: none; stroke: rgba(255, 255, 255, 0.09); stroke-width: 1.5; stroke-linecap: round; }
@@ -1378,3 +1350,19 @@ iframe.video-player { aspect-ratio: 16 / 9; height: auto; max-height: 50vh; }
 .graph-relation > .chapter-time { order: 0; flex-shrink: 0; }
 .graph-relation > :last-child { font-family: inherit; font-size: 13px; color: var(--text); opacity: 1; }
 .legend-item i { background: #111113; }
+
+/* Background grid: fine square grid that fades out from the centre */
+.hero::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-position: center center;
+  opacity: 1;
+}
+.graph-canvas-wrapper {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+    #030303;
+}
