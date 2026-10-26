@@ -6,27 +6,27 @@
   <title>videograph - evidence-grounded video Q&amp;A</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="dark-theme">
   <header class="navbar">
-    <div class="nav-brand"><div class="logo-icon">VG</div><div class="brand-text"><span class="brand-title">videograph</span><span class="brand-badge">Evidence-Grounded KG</span></div></div>
+    <div class="nav-brand"><div class="logo-icon">VG</div><div class="brand-text"><span class="brand-title">videograph</span><span class="brand-badge">evidence-grounded</span></div></div>
     <button id="btn-new-video" class="btn btn-secondary" type="button" hidden>New video</button>
   </header>
   <main class="app-layout">
     <section id="hero" class="hero" aria-labelledby="input-title">
-      <svg class="hero-grid" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><pattern id="ambient-grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M 48 0 L 0 0 0 48" fill="none" stroke="currentColor" stroke-width="1"/></pattern></defs><rect width="1200" height="800" fill="url(#ambient-grid)"/></svg>
+      <svg class="hero-grid" style="display:none;" aria-hidden="true"></svg>
       <div id="hero-content" class="hero-content">
-        <span class="hero-eyebrow">VIDEO → KNOWLEDGE</span>
         <h1 id="input-title">Find the moments that matter.</h1>
-        <p class="hero-subtitle">Turn a video into a clear summary, study cards, and a graph of evidence you can trace.</p>
+        <p class="hero-subtitle">Turn video into a verified summary, study flashcards, and an evidence graph.</p>
         <form id="form-url" class="hero-input">
           <label class="visually-hidden" for="input-url">YouTube URL</label>
           <input type="url" id="input-url" placeholder="Paste a YouTube video link" required>
           <button type="submit" class="btn btn-primary">Explore video</button>
         </form>
+        <p id="input-error" class="input-error hidden" role="alert"></p>
         <div class="hero-actions">
           <button id="btn-load-sample" class="hero-pill" type="button">Try the demo</button>
           <button id="btn-upload" class="hero-pill" type="button">Upload a file</button>
@@ -38,13 +38,11 @@
           <select id="select-model-file"><option value="gemma-4-it">Gemma 4</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option></select>
           <button type="submit">Process upload <span class="spinner hidden" id="spinner-upload"></span></button>
         </form>
-        <p id="input-error" class="input-error hidden" role="alert"></p>
       </div>
-      <div id="processing-card" class="processing-card card glassmorphism" role="status" hidden>
-        <div class="processing-icon"><span class="pulse-indicator"></span></div>
-        <p class="hero-eyebrow">BUILDING YOUR STUDY SPACE</p>
-        <h2 id="processing-title">Fetching video details...</h2>
-        <div class="processing-details"><span id="processing-channel">Channel pending</span><span id="processing-duration">Duration pending</span></div>
+      <div id="processing-card" class="processing-card card" role="status" hidden>
+        <h2 id="processing-title">Analyzing video...</h2>
+        <div class="processing-progress-bar"><div class="progress-indeterminate"></div></div>
+        <div class="processing-details"><span id="processing-channel"></span><span id="processing-duration"></span></div>
         <div id="processing-banner" class="processing-banner"><span id="processing-status-text">Processing...</span></div>
       </div>
     </section>
