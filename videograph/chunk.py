@@ -28,21 +28,27 @@ class TranscriptChunk(BaseModel):
 
 def chunk_transcript(
     segments: List[TranscriptSegment],
-    target_duration_sec: float = 120.0,
-    overlap_duration_sec: float = 20.0,
+    target_duration_sec: float = 60.0,
+    overlap_duration_sec: float = 10.0,
     max_char_len: int = 2500,
 ) -> List[TranscriptChunk]:
     """Chunks transcript segments into overlapping time windows.
     
     Args:
         segments: List of ordered TranscriptSegments.
-        target_duration_sec: Target window size in seconds (e.g. 2 minutes).
-        overlap_duration_sec: Overlap window between consecutive chunks.
+        target_duration_sec: Target window size in seconds (default 60 seconds).
+        overlap_duration_sec: Target overlap between consecutive chunks
+            (default 10 seconds). Segment boundaries take precedence, so the
+            actual overlap may be slightly larger or smaller.
         max_char_len: Maximum text length threshold to prevent oversized prompts.
         
     Returns:
         List of TranscriptChunk objects.
     """
+    if target_duration_sec <= 0:
+        raise ValueError("target_duration_sec must be greater than zero")
+    if overlap_duration_sec < 0:
+        raise ValueError("overlap_duration_sec must not be negative")
     if not segments:
         return []
 

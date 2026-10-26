@@ -1,112 +1,135 @@
-"""Question-Answering module with FAISS dense retrieval and grounded citation verification.
-
-Pipeline:
-1. Index transcript segments into FAISS index using SentenceTransformers.
-2. Search top-k segments semantically relevant to question.
-3. Prompt LLM for structured answer with citations.
-4. Verify every citation against transcript text with RapidFuzz + timestamps.
-"""
+"""FAISS retrieval and strictly grounded question answering."""
 
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
-import numpy as np
 
-from videograph.schemas import TranscriptSegment, QAResponse, QACitation
-from videograph.prompts import GROUNDED_QA_PROMPT
+import re
+from typing import Callable, List, Optional, Protocol, Sequence, Tuple
+
+import numpy as np
+from pydantic import BaseModel, Field
+
+from videograph.grounding import get_embed_model, is_grounded
 from videograph.llm import call_llm_json
-from videograph.grounding import get_embed_model, verify_citation
+from videograph.prompts import GROUNDED_QA_PROMPT
+from videograph.schemas import KnowledgeGraph, QACitation, QAResponse, TranscriptSegment
+
+NO_CONTEXT_ANSWER = "I couldn't find relevant evidence in the transcript."
+DEFAULT_SIMILARITY_THRESHOLD = 0.25
+
+
+class QAOutput(BaseModel):
+    """The LLM-owned portion of a grounded QA response."""
+
+    answer: str
+    citations: List[QACitation] = Field(default_factory=list)
+
+
+class Embedder(Protocol):
+    def encode(self, texts: Sequence[str], *, convert_to_numpy: bool, normalize_embeddings: bool) -> np.ndarray:
+        ...
 
 
 class TranscriptRetriever:
-    """FAISS-based dense semantic retriever over video transcript segments."""
+    """A per-request FAISS index over timestamped transcript chunks."""
 
-    def __init__(self, segments: List[TranscriptSegment]):
+    def __init__(self, segments: List[TranscriptSegment], embedder: Optional[Embedder] = None):
         self.segments = segments
+        self.embedder = embedder or get_embed_model()
         self.index = None
-        self.dimension = 384
-        self._build_index()
+        if self.segments and self.embedder is not None:
+            self._build_index()
 
     def _build_index(self) -> None:
-        if not self.segments:
-            return
-
-        embedder = get_embed_model()
-        if embedder is None:
-            return
-
         import faiss
 
-        texts = [s.text for s in self.segments]
-        embeddings = embedder.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
-        self.dimension = embeddings.shape[1]
+        embeddings = self.embedder.encode(
+            [segment.text for segment in self.segments],
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        ).astype(np.float32)
+        self.index = faiss.IndexFlatIP(embeddings.shape[1])
+        self.index.add(embeddings)
 
-        # Inner product on normalized vectors = cosine similarity
-        self.index = faiss.IndexFlatIP(self.dimension)
-        self.index.add(embeddings.astype(np.float32))
-
-    def retrieve(self, query: str, top_k: int = 5) -> List[TranscriptSegment]:
-        """Retrieve most relevant transcript segments for a query."""
-        if not self.segments:
+    def retrieve(self, question: str, top_k: int = 5) -> List[Tuple[TranscriptSegment, float]]:
+        """Return the highest-scoring chunks and cosine similarities."""
+        if self.index is None or self.embedder is None:
             return []
+        query = self.embedder.encode(
+            [question], convert_to_numpy=True, normalize_embeddings=True
+        ).astype(np.float32)
+        scores, indices = self.index.search(query, min(top_k, len(self.segments)))
+        return [
+            (self.segments[index], float(score))
+            for score, index in zip(scores[0], indices[0])
+            if 0 <= index < len(self.segments)
+        ]
 
-        embedder = get_embed_model()
-        if self.index is None or embedder is None:
-            # Fallback: simple keyword or prefix match
-            return self.segments[:top_k]
 
-        q_vec = embedder.encode([query], convert_to_numpy=True, normalize_embeddings=True)
-        scores, indices = self.index.search(q_vec.astype(np.float32), min(top_k, len(self.segments)))
+def _timestamp(seconds: float) -> str:
+    return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
 
-        results = []
-        for idx in indices[0]:
-            if 0 <= idx < len(self.segments):
-                results.append(self.segments[idx])
-        return results
+
+def _mentioned_node_ids(segments: Sequence[TranscriptSegment], graph: KnowledgeGraph) -> set[str]:
+    """Find graph nodes whose label or identifier occurs in retrieved text."""
+    text = " ".join(segment.text.casefold() for segment in segments)
+    mentions = set()
+    for node in graph.nodes:
+        candidates = (node.label, node.id.replace("_", " "))
+        if any(re.search(rf"(?<!\w){re.escape(candidate.casefold())}(?!\w)", text) for candidate in candidates):
+            mentions.add(node.id)
+    return mentions
+
+
+def _one_hop_facts(segments: Sequence[TranscriptSegment], graph: Optional[KnowledgeGraph]) -> List[str]:
+    if graph is None:
+        return []
+    mentioned = _mentioned_node_ids(segments, graph)
+    labels = {node.id: node.label for node in graph.nodes}
+    facts = []
+    for edge in graph.edges:
+        if edge.source in mentioned or edge.target in mentioned:
+            facts.append(
+                f"{labels.get(edge.source, edge.source)} -{edge.relation}-> "
+                f"{labels.get(edge.target, edge.target)} [{_timestamp(edge.start_time)}]"
+            )
+    return facts
+
+
+def build_qa_context(retrieved: Sequence[Tuple[TranscriptSegment, float]], graph: Optional[KnowledgeGraph]) -> str:
+    """Format retrieved transcript chunks and their one-hop graph facts."""
+    segments = [segment for segment, _ in retrieved]
+    transcript = [
+        f"[{segment.timestamp_str}] (start={segment.start:.1f}s, end={segment.end:.1f}s): {segment.text}"
+        for segment in segments
+    ]
+    facts = _one_hop_facts(segments, graph)
+    return "\n".join([*transcript, *( ["Graph facts:", *facts] if facts else [])])
 
 
 def answer_question(
     question: str,
     segments: List[TranscriptSegment],
+    graph: Optional[KnowledgeGraph] = None,
     model: str = "gemma-4-it",
-    top_k: int = 6,
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    llm_call: Callable[[str, type[QAOutput], str], QAOutput] = call_llm_json,
 ) -> QAResponse:
-    """Generate grounded answer with timestamped, verified citations."""
-    if not segments:
-        return QAResponse(
-            question=question,
-            answer="No transcript segments are available for this video.",
-            citations=[],
-            grounded=False,
-        )
+    """Answer only when semantic retrieval finds sufficiently relevant evidence."""
+    retrieved = TranscriptRetriever(segments).retrieve(question, top_k=5)
+    passing = [(segment, score) for segment, score in retrieved if score >= similarity_threshold]
+    if not passing:
+        return QAResponse(question=question, answer=NO_CONTEXT_ANSWER, citations=[], grounded=False)
 
-    retriever = TranscriptRetriever(segments)
-    top_segments = retriever.retrieve(question, top_k=top_k)
-
-    # Format snippets for prompt
-    snippets = []
-    for s in top_segments:
-        snippets.append(f"[{s.timestamp_str}] (start={s.start:.1f}s, end={s.end:.1f}s): {s.text}")
-    context_text = "\n".join(snippets)
-
-    prompt = GROUNDED_QA_PROMPT.format(
-        context_snippets=context_text,
+    prompt = GROUNDED_QA_PROMPT.format(context_snippets=build_qa_context(passing, graph), question=question)
+    output = llm_call(prompt, QAOutput, model)
+    verified = [
+        citation.model_copy(update={"verified": True})
+        for citation in output.citations
+        if is_grounded(citation.quote, segments, citation.start_time, citation.end_time)
+    ]
+    return QAResponse(
         question=question,
+        answer=output.answer,
+        citations=verified,
+        grounded=bool(verified),
     )
-
-    qa_output = call_llm_json(prompt, QAResponse, model=model)
-    qa_output.question = question
-
-    # Verify each citation against the full transcript
-    verified_citations: List[QACitation] = []
-    all_verified = True
-
-    for cit in qa_output.citations:
-        v_cit = verify_citation(cit, segments)
-        verified_citations.append(v_cit)
-        if not v_cit.verified:
-            all_verified = False
-
-    qa_output.citations = verified_citations
-    qa_output.grounded = all_verified if verified_citations else False
-
-    return qa_output

@@ -25,6 +25,31 @@ Return ONLY valid JSON matching this exact structure:
 }}
 """
 
+CHAPTERS_PROMPT = """
+Create chronological video chapters from these timestamped chunk gists.
+Every `start_sec` MUST exactly equal one of the supplied chunk starts.
+
+Chunk gists:
+{chunk_gists}
+
+Return ONLY JSON:
+{{"chapters": [{{"title": "...", "start_sec": 0.0, "summary": "..."}}]}}
+"""
+
+SUMMARY_PROMPT = """
+Write a concise executive summary based only on these video chapters and
+timestamped entity gists.
+
+Chapters:
+{chapters}
+
+Chunk gists:
+{chunk_gists}
+
+Return ONLY JSON:
+{{"summary": "..."}}
+"""
+
 EXTRACT_GRAPH_PROMPT = """
 You are an expert knowledge graph engineer. Analyze the following video transcript chunk.
 Extract the key entities (Concepts, Technologies, People, Organizations, Methods) and directed relationships between them.

@@ -141,6 +141,7 @@ class KnowledgeEdge(BaseModel):
     start_time: float
     end_time: float
     confidence: float = 1.0
+    grounded: bool = False
 
 
 class KnowledgeGraph(BaseModel):

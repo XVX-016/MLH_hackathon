@@ -1,136 +1,162 @@
-"""NetworkX graph integration, centrality analysis, and Vis.js serialization.
-
-Converts validated KnowledgeGraph models into NetworkX MultiDiGraph and interactive Vis.js datasets.
-"""
+"""NetworkX and vis-network representations of evidence-grounded graphs."""
 
 from __future__ import annotations
-from typing import Dict, Any, List
+
+from html import escape
+from typing import Any, Dict, Iterable, Union
+
 import networkx as nx
 
-from videograph.schemas import KnowledgeGraph, KnowledgeNode, KnowledgeEdge
+from videograph.resolve import ResolvedExtraction
+from videograph.schemas import ChunkExtraction, KnowledgeGraph
+
+GraphInput = Union[KnowledgeGraph, ChunkExtraction, ResolvedExtraction]
 
 
-def build_networkx_graph(graph: KnowledgeGraph) -> nx.MultiDiGraph:
-    """Construct NetworkX MultiDiGraph from KnowledgeGraph."""
-    g = nx.MultiDiGraph()
-
-    for node in graph.nodes:
-        g.add_node(
-            node.id,
-            label=node.label,
-            type=node.type,
-            description=node.description,
-        )
-
-    for edge in graph.edges:
-        g.add_edge(
-            edge.source,
-            edge.target,
-            relation=edge.relation,
-            evidence_quote=edge.evidence_quote,
-            start_time=edge.start_time,
-            end_time=edge.end_time,
-            confidence=edge.confidence,
-        )
-
-    return g
+def _extraction(source: GraphInput) -> ChunkExtraction | None:
+    if isinstance(source, ResolvedExtraction):
+        return source.extraction
+    if isinstance(source, ChunkExtraction):
+        return source
+    return None
 
 
-def compute_graph_metrics(graph: KnowledgeGraph) -> Dict[str, Any]:
-    """Calculate degree, betweenness centrality, and graph statistics."""
+def _add_communities(graph: nx.MultiDiGraph) -> None:
+    """Attach deterministic Louvain community numbers to every graph node."""
+    if not graph.nodes:
+        return
+    undirected = nx.Graph()
+    undirected.add_nodes_from(graph.nodes)
+    undirected.add_edges_from((source, target) for source, target in graph.edges())
+    communities = nx.community.louvain_communities(undirected, seed=0)
+    for index, members in enumerate(communities):
+        for node_id in members:
+            graph.nodes[node_id]["community"] = index
+
+
+def build_networkx_graph(source: GraphInput) -> nx.MultiDiGraph:
+    """Build a MultiDiGraph with evidence lists and node mention timestamps."""
+    graph = nx.MultiDiGraph()
+    extraction = _extraction(source)
+    if extraction is not None:
+        for entity in extraction.entities:
+            graph.add_node(
+                entity.name,
+                label=entity.name,
+                type=entity.type,
+                aliases=entity.aliases,
+                mentions=[],
+            )
+        for relation in extraction.relations:
+            evidence = {
+                "quote": relation.quote,
+                "start": relation.start_sec,
+                "end": relation.end_sec,
+            }
+            for name in (relation.subject, relation.object):
+                if name not in graph:
+                    graph.add_node(name, label=name, type="Concept", aliases=[], mentions=[])
+                graph.nodes[name]["mentions"].append(relation.start_sec)
+            graph.add_edge(
+                relation.subject,
+                relation.object,
+                relation=relation.predicate,
+                evidence=[evidence],
+            )
+    else:
+        assert isinstance(source, KnowledgeGraph)
+        for node in source.nodes:
+            graph.add_node(
+                node.id,
+                label=node.label,
+                type=node.type,
+                description=node.description or "",
+                mentions=[],
+            )
+        for edge in source.edges:
+            evidence = {"quote": edge.evidence_quote, "start": edge.start_time, "end": edge.end_time}
+            for node_id in (edge.source, edge.target):
+                if node_id not in graph:
+                    graph.add_node(node_id, label=node_id, type="Concept", mentions=[])
+                graph.nodes[node_id]["mentions"].append(edge.start_time)
+            graph.add_edge(edge.source, edge.target, relation=edge.relation, evidence=[evidence], confidence=edge.confidence)
+
+    for _, attrs in graph.nodes(data=True):
+        attrs["mentions"] = sorted(set(attrs["mentions"]))
+    _add_communities(graph)
+    return graph
+
+
+def compute_louvain_communities(source: GraphInput) -> Dict[str, int]:
+    """Return a node-to-community mapping computed with Louvain clustering."""
+    graph = build_networkx_graph(source)
+    return {node_id: attrs["community"] for node_id, attrs in graph.nodes(data=True)}
+
+
+def compute_graph_metrics(source: GraphInput) -> Dict[str, Any]:
+    """Calculate basic graph statistics and centrality scores."""
+    graph = build_networkx_graph(source)
     if not graph.nodes:
         return {"num_nodes": 0, "num_edges": 0, "centrality": {}}
-
-    nx_graph = build_networkx_graph(graph)
-    # Simple DiGraph for degree / centrality calculation
-    simple_digraph = nx.DiGraph(nx_graph)
-
-    degree_cent = nx.degree_centrality(simple_digraph)
-    between_cent = nx.betweenness_centrality(simple_digraph)
-
-    # Sort nodes by top degree
-    sorted_nodes = sorted(degree_cent.items(), key=lambda x: x[1], reverse=True)
-
+    simple_graph = nx.DiGraph(graph)
+    degree = nx.degree_centrality(simple_graph)
+    betweenness = nx.betweenness_centrality(simple_graph)
     return {
-        "num_nodes": len(graph.nodes),
-        "num_edges": len(graph.edges),
-        "top_entities": [{"id": k, "score": round(v, 3)} for k, v in sorted_nodes[:10]],
-        "degree_centrality": {k: round(v, 3) for k, v in degree_cent.items()},
-        "betweenness_centrality": {k: round(v, 3) for k, v in between_cent.items()},
+        "num_nodes": graph.number_of_nodes(),
+        "num_edges": graph.number_of_edges(),
+        "top_entities": [
+            {"id": node_id, "score": round(score, 3)}
+            for node_id, score in sorted(degree.items(), key=lambda item: item[1], reverse=True)[:10]
+        ],
+        "degree_centrality": {node_id: round(score, 3) for node_id, score in degree.items()},
+        "betweenness_centrality": {node_id: round(score, 3) for node_id, score in betweenness.items()},
+        "communities": {node_id: attrs["community"] for node_id, attrs in graph.nodes(data=True)},
     }
 
 
-def to_vis_network_data(graph: KnowledgeGraph) -> Dict[str, Any]:
-    """Export KnowledgeGraph into Vis.js / vis-network nodes and edges format.
-    
-    Includes styling, tooltips, and evidence metadata for UI rendering.
-    """
-    type_color_map = {
-        "concept": "#6366f1",       # Indigo
-        "technology": "#06b6d4",    # Cyan
-        "tech": "#06b6d4",          # Cyan
-        "tool": "#10b981",          # Emerald
-        "person": "#f59e0b",        # Amber
-        "organization": "#ec4899",  # Pink
-        "method": "#8b5cf6",        # Purple
-    }
+def _timestamp(seconds: float) -> str:
+    return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
 
-    vis_nodes = []
-    for node in graph.nodes:
-        ntype = (node.type or "concept").lower()
-        color = type_color_map.get(ntype, "#6366f1")
-        vis_nodes.append({
-            "id": node.id,
-            "label": node.label,
-            "title": f"<b>{node.label}</b> ({node.type})<br/>{node.description}",
-            "color": {
-                "background": color,
-                "border": "#1e293b",
-                "highlight": {
-                    "background": "#f43f5e",
-                    "border": "#ffffff"
-                }
-            },
-            "font": {"color": "#f8fafc", "face": "Inter, sans-serif"},
-            "shape": "dot",
-            "size": 18,
-            "group": node.type,
-            "meta": {
-                "type": node.type,
-                "description": node.description,
+
+def to_vis_network_data(source: GraphInput) -> Dict[str, Any]:
+    """Export graph data in vis-network's ``{nodes, edges}`` format."""
+    graph = build_networkx_graph(source)
+    colors = {
+        "concept": "#6366f1", "technology": "#06b6d4", "tool": "#10b981",
+        "person": "#f59e0b", "organization": "#ec4899", "method": "#8b5cf6",
+    }
+    nodes = [
+        {
+            "id": node_id,
+            "label": attrs["label"],
+            "title": f"<b>{escape(attrs['label'])}</b><br>Mentions: {', '.join(_timestamp(time) for time in attrs['mentions']) or 'none'}",
+            "size": 16 + 4 * graph.degree(node_id),
+            "group": attrs["type"],
+            "color": colors.get(attrs["type"].casefold(), "#6366f1"),
+            "mentions": attrs["mentions"],
+            "community": attrs["community"],
+        }
+        for node_id, attrs in graph.nodes(data=True)
+    ]
+    edges = []
+    for index, (source_id, target_id, attrs) in enumerate(graph.edges(data=True)):
+        evidence = attrs["evidence"]
+        first = evidence[0]
+        edges.append(
+            {
+                "id": f"e_{index}_{source_id}_{target_id}",
+                "from": source_id,
+                "to": target_id,
+                "label": attrs["relation"],
+                "title": escape(first["quote"]),
+                "arrows": "to",
+                "evidence": evidence,
+                # Compatibility fields for the existing browser evidence drawer.
+                "evidence_quote": first["quote"],
+                "start_time": first["start"],
+                "end_time": first["end"],
+                "timestamp_str": _timestamp(first["start"]),
+                "confidence": attrs.get("confidence", 1.0),
             }
-        })
-
-    vis_edges = []
-    for idx, edge in enumerate(graph.edges):
-        m = int(edge.start_time // 60)
-        s = int(edge.start_time % 60)
-        ts = f"{m:02d}:{s:02d}"
-
-        tooltip = (
-            f"<b>Relation:</b> {edge.relation}<br/>"
-            f"<b>Evidence:</b> \"{edge.evidence_quote}\"<br/>"
-            f"<b>Timestamp:</b> [{ts}] ({edge.start_time:.1f}s - {edge.end_time:.1f}s)<br/>"
-            f"<b>Confidence:</b> {edge.confidence * 100:.0f}%"
         )
-
-        vis_edges.append({
-            "id": f"e_{idx}_{edge.source}_{edge.target}",
-            "from": edge.source,
-            "to": edge.target,
-            "label": edge.relation,
-            "title": tooltip,
-            "arrows": "to",
-            "color": {"color": "#94a3b8", "highlight": "#38bdf8"},
-            "font": {"color": "#cbd5e1", "size": 11, "strokeWidth": 2, "strokeColor": "#0f172a"},
-            "evidence_quote": edge.evidence_quote,
-            "start_time": edge.start_time,
-            "end_time": edge.end_time,
-            "timestamp_str": ts,
-            "confidence": edge.confidence,
-        })
-
-    return {
-        "nodes": vis_nodes,
-        "edges": vis_edges,
-    }
+    return {"nodes": nodes, "edges": edges}

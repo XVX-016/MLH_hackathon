@@ -11,7 +11,7 @@ import re
 from typing import List, Tuple, Optional
 from rapidfuzz import fuzz
 
-from videograph.schemas import TranscriptSegment, QACitation, KnowledgeEdge
+from videograph.schemas import TranscriptSegment, QACitation, KnowledgeEdge, KnowledgeGraph
 
 # Global lazy-loaded embedding model to avoid reload cost
 _EMBED_MODEL = None
@@ -35,6 +35,55 @@ def clean_text_for_matching(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^\w\s]", " ", text)
     return " ".join(text.split())
+
+
+def is_grounded(
+    quote: str,
+    segments: List[TranscriptSegment],
+    start: float,
+    end: float,
+    window_padding_sec: float = 5.0,
+) -> bool:
+    """Check whether a quote closely matches transcript text near its timestamps.
+
+    Only segments intersecting ``[start - 5s, end + 5s]`` are considered. This
+    prevents a real quote elsewhere in a video from grounding a wrongly timed
+    graph edge.
+    """
+    normalized_quote = clean_text_for_matching(quote)
+    if not normalized_quote or start > end:
+        return False
+
+    nearby_segments = [
+        segment
+        for segment in segments
+        if segment.end >= start - window_padding_sec
+        and segment.start <= end + window_padding_sec
+    ]
+    if not nearby_segments:
+        return False
+
+    candidate_text = clean_text_for_matching(" ".join(segment.text for segment in nearby_segments))
+    return fuzz.partial_ratio(normalized_quote, candidate_text) >= 90.0
+
+
+def filter_graph(
+    graph: KnowledgeGraph,
+    segments: List[TranscriptSegment],
+) -> Tuple[KnowledgeGraph, float]:
+    """Flag each edge's evidence and return a copy of the graph and pass rate."""
+    filtered_edges: List[KnowledgeEdge] = []
+    for edge in graph.edges:
+        grounded = is_grounded(
+            edge.evidence_quote,
+            segments,
+            edge.start_time,
+            edge.end_time,
+        )
+        filtered_edges.append(edge.model_copy(update={"grounded": grounded}))
+
+    pass_rate = sum(edge.grounded for edge in filtered_edges) / len(filtered_edges) if filtered_edges else 1.0
+    return graph.model_copy(update={"edges": filtered_edges}), pass_rate
 
 
 def find_best_transcript_alignment(

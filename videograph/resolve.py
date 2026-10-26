@@ -1,68 +1,131 @@
-"""Entity resolution and deduplication module for videograph.
-
-Unifies candidate entities across chunks using:
-1. Canonical normalization (casing, trimming, punctuation).
-2. RapidFuzz token sort string similarity clustering.
-3. LLM cluster refinement for semantic synonym merging.
-"""
+"""Deterministic entity resolution for extracted knowledge."""
 
 from __future__ import annotations
+
 import re
-from typing import List, Dict, Set
+from typing import Dict, List, Set, Tuple
+
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
 
-from videograph.schemas import KnowledgeNode, KnowledgeEdge, KnowledgeGraph
-from videograph.prompts import RESOLVE_ENTITIES_PROMPT
-from videograph.llm import call_llm_json
+from videograph.schemas import ChunkExtraction, Entity, KnowledgeGraph, KnowledgeNode
+
+FUZZY_MATCH_THRESHOLD = 90.0
+MIN_FUZZY_NAME_LENGTH = 5
 
 
-class ResolvedCluster(BaseModel):
-    canonical_id: str
-    canonical_label: str
-    type: str = "Concept"
-    aliases: List[str] = Field(default_factory=list)
+class ResolvedExtraction(BaseModel):
+    """Resolved extraction plus a source-name-to-canonical-name debug map."""
 
-
-class ResolveClustersOutput(BaseModel):
-    clusters: List[ResolvedCluster] = Field(default_factory=list)
+    extraction: ChunkExtraction
+    merge_map: Dict[str, str] = Field(default_factory=dict)
 
 
 def normalize_entity_id(label: str) -> str:
-    """Convert label into canonical lowercase underscored token."""
-    cleaned = re.sub(r"[^\w\s-]", "", label).strip().lower()
-    return re.sub(r"[-\s]+", "_", cleaned)
+    """Return a comparison key insensitive to spacing and punctuation."""
+    return re.sub(r"[^\w]", "", label.casefold())
 
 
-def fast_fuzzy_clustering(nodes: List[KnowledgeNode], similarity_threshold: float = 85.0) -> Dict[str, str]:
-    """Group similar entity IDs using token sort ratio.
-    
-    Returns:
-        Mapping from candidate node id -> canonical node id.
-    """
-    id_map: Dict[str, str] = {}
-    canonical_reps: List[Tuple[str, str]] = []  # (canonical_id, label)
+def _entity_terms(entity: Entity) -> Set[str]:
+    """Return normalized entity name and aliases, excluding blank values."""
+    return {term for value in [entity.name, *entity.aliases] if (term := normalize_entity_id(value))}
 
-    for node in nodes:
-        curr_id = normalize_entity_id(node.id or node.label)
-        curr_label = node.label.strip()
 
-        matched_rep = None
-        for rep_id, rep_label in canonical_reps:
-            # Check string similarity between labels
-            ratio = fuzz.token_sort_ratio(curr_label.lower(), rep_label.lower())
-            if ratio >= similarity_threshold:
-                matched_rep = rep_id
-                break
+def _same_type(first: Entity, second: Entity) -> bool:
+    return first.type.strip().casefold() == second.type.strip().casefold()
 
-        if matched_rep:
-            id_map[node.id] = matched_rep
-            id_map[curr_id] = matched_rep
+
+def _matches_entity(candidate: Entity, canonical: Entity) -> bool:
+    """Match by normalized names/aliases, then conservatively by fuzzy score."""
+    candidate_terms = _entity_terms(candidate)
+    canonical_terms = _entity_terms(canonical)
+    if candidate_terms & canonical_terms:
+        return True
+    return any(
+        min(len(left), len(right)) >= MIN_FUZZY_NAME_LENGTH
+        and fuzz.ratio(left, right) >= FUZZY_MATCH_THRESHOLD
+        for left in candidate_terms
+        for right in canonical_terms
+    )
+
+
+def resolve_chunk_extraction(extraction: ChunkExtraction) -> ResolvedExtraction:
+    """Merge same-type entities and rewrite relation endpoints canonically."""
+    canonical_entities: List[Entity] = []
+    merge_map: Dict[str, str] = {}
+    term_map: Dict[str, str] = {}
+
+    for entity in extraction.entities:
+        match = next(
+            (
+                canonical
+                for canonical in canonical_entities
+                if _same_type(entity, canonical) and _matches_entity(entity, canonical)
+            ),
+            None,
+        )
+        if match is None:
+            match = entity.model_copy(deep=True)
+            canonical_entities.append(match)
         else:
-            canonical_reps.append((curr_id, curr_label))
-            id_map[node.id] = curr_id
-            id_map[curr_id] = curr_id
+            aliases = [*match.aliases, entity.name, *entity.aliases]
+            match.aliases = list(dict.fromkeys(alias for alias in aliases if alias != match.name))
 
+        merge_map[entity.name] = match.name
+        for term in _entity_terms(entity) | _entity_terms(match):
+            term_map[term] = match.name
+
+    def canonical_name(name: str) -> str:
+        return term_map.get(normalize_entity_id(name), name)
+
+    relations = [
+        relation.model_copy(
+            update={
+                "subject": canonical_name(relation.subject),
+                "object": canonical_name(relation.object),
+            }
+        )
+        for relation in extraction.relations
+    ]
+    return ResolvedExtraction(
+        extraction=ChunkExtraction(entities=canonical_entities, relations=relations),
+        merge_map=merge_map,
+    )
+
+
+resolve_extraction = resolve_chunk_extraction
+
+
+def fast_fuzzy_clustering(
+    nodes: List[KnowledgeNode], similarity_threshold: float = FUZZY_MATCH_THRESHOLD
+) -> Dict[str, str]:
+    """Return a type-aware mapping from node IDs to canonical node IDs."""
+    representatives: List[KnowledgeNode] = []
+    id_map: Dict[str, str] = {}
+    for node in nodes:
+        node_key = normalize_entity_id(node.label)
+        match = next(
+            (
+                representative
+                for representative in representatives
+                if representative.type.casefold() == node.type.casefold()
+                and (
+                    normalize_entity_id(representative.label) == node_key
+                    or (
+                        min(len(normalize_entity_id(representative.label)), len(node_key))
+                        >= MIN_FUZZY_NAME_LENGTH
+                        and fuzz.ratio(normalize_entity_id(representative.label), node_key)
+                        >= similarity_threshold
+                    )
+                )
+            ),
+            None,
+        )
+        canonical_id = match.id if match else normalize_entity_id(node.id or node.label)
+        if match is None:
+            representatives.append(node)
+        id_map[node.id] = canonical_id
+        id_map[normalize_entity_id(node.id)] = canonical_id
     return id_map
 
 
@@ -71,60 +134,27 @@ def resolve_knowledge_graph(
     use_llm_clustering: bool = False,
     model: str = "gemma-4-it",
 ) -> KnowledgeGraph:
-    """Deduplicate nodes and remap edges to canonical entities."""
-    if not graph.nodes:
-        return graph
-
-    # Step 1: Deterministic normalization & fuzzy clustering
+    """Deduplicate graph nodes and rewrite edges to canonical node IDs."""
+    # Kept for API compatibility. Resolution is deliberately deterministic so
+    # canonical names and the debugging map remain reproducible.
+    del use_llm_clustering, model
     id_map = fast_fuzzy_clustering(graph.nodes)
-
-    # Compile canonical node representations
-    node_registry: Dict[str, KnowledgeNode] = {}
+    nodes: Dict[str, KnowledgeNode] = {}
     for node in graph.nodes:
-        canon_id = id_map.get(node.id, normalize_entity_id(node.id))
-        if canon_id not in node_registry:
-            node_registry[canon_id] = KnowledgeNode(
-                id=canon_id,
-                label=node.label.strip(),
-                type=node.type or "Concept",
-                description=node.description or "",
-            )
-        else:
-            # Preserve longer descriptive text
-            existing = node_registry[canon_id]
-            if len(node.description or "") > len(existing.description or ""):
-                existing.description = node.description
+        canonical_id = id_map[node.id]
+        if canonical_id not in nodes:
+            nodes[canonical_id] = node.model_copy(update={"id": canonical_id})
 
-    # Step 2: Remap edges and remove self-loops or duplicate edges
-    resolved_edges: List[KnowledgeEdge] = []
-    seen_edge_keys: Set[Tuple[str, str, str]] = set()
-
+    seen_edges: Set[Tuple[str, str, str]] = set()
+    edges = []
     for edge in graph.edges:
-        new_source = id_map.get(edge.source, normalize_entity_id(edge.source))
-        new_target = id_map.get(edge.target, normalize_entity_id(edge.target))
-
-        # Drop self-loops
-        if new_source == new_target:
+        source = id_map.get(edge.source, normalize_entity_id(edge.source))
+        target = id_map.get(edge.target, normalize_entity_id(edge.target))
+        if source == target:
             continue
-
-        # Check for existence in nodes; create default node if referenced in edge
-        for n_id, n_label in [(new_source, edge.source), (new_target, edge.target)]:
-            if n_id not in node_registry:
-                node_registry[n_id] = KnowledgeNode(
-                    id=n_id,
-                    label=n_label.replace("_", " ").title(),
-                    type="Concept",
-                )
-
-        edge_key = (new_source, new_target, edge.relation.upper())
-        if edge_key not in seen_edge_keys:
-            seen_edge_keys.add(edge_key)
-            edge.source = new_source
-            edge.target = new_target
-            edge.relation = edge.relation.upper()
-            resolved_edges.append(edge)
-
-    return KnowledgeGraph(
-        nodes=list(node_registry.values()),
-        edges=resolved_edges,
-    )
+        key = (source, target, edge.relation.upper())
+        if key in seen_edges:
+            continue
+        seen_edges.add(key)
+        edges.append(edge.model_copy(update={"source": source, "target": target, "relation": edge.relation.upper()}))
+    return KnowledgeGraph(nodes=list(nodes.values()), edges=edges)
