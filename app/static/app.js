@@ -4,6 +4,7 @@ let currentJobId = null;
 let currentVideoUrl = null;
 let currentYoutubeId = null;
 let visNetworkInstance = null;
+let graphResetFocus = function () {};
 
 document.addEventListener("DOMContentLoaded", function () {
   initForms();
@@ -42,6 +43,18 @@ document.addEventListener("DOMContentLoaded", function () {
   });
   document.getElementById("video-player").addEventListener("timeupdate", updateActiveTranscript);
   window.addEventListener("hashchange", applyRoute);
+  document.getElementById("deck-prev").addEventListener("click", function () { showDeckCard(deckIndex - 1); });
+  document.getElementById("deck-next").addEventListener("click", function () { showDeckCard(deckIndex + 1); });
+  document.getElementById("deck-shuffle").addEventListener("click", shuffleDeck);
+  var deck = document.getElementById("flashcards-list");
+  var swipeStart = null;
+  deck.addEventListener("pointerdown", function (event) { swipeStart = event.clientX; });
+  deck.addEventListener("pointerup", function (event) {
+    if (swipeStart === null) return;
+    var distance = event.clientX - swipeStart;
+    swipeStart = null;
+    if (Math.abs(distance) > 60) showDeckCard(deckIndex + (distance < 0 ? 1 : -1));
+  });
   document.getElementById("btn-copy-link").addEventListener("click", async function (event) {
     var button = event.currentTarget;
     try {
@@ -59,6 +72,12 @@ document.addEventListener("DOMContentLoaded", function () {
     var target = event.target;
     if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
     if (document.getElementById("results").hidden) return;
+    if (!document.getElementById("panel-flashcards").hidden && !target.classList.contains("study-tab") &&
+        (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      event.preventDefault();
+      showDeckCard(deckIndex + (event.key === "ArrowRight" ? 1 : -1));
+      return;
+    }
     var tabs = { "1": "tab-summary", "2": "tab-flashcards", "3": "tab-graph" };
     if (tabs[event.key]) {
       event.preventDefault();
@@ -469,34 +488,77 @@ function briefAsText(data) {
   return lines.join("\n");
 }
 
+// Flashcard deck: one card in front, the next two stacked behind it.
+var deckCards = [];
+var deckIndex = 0;
+
 function renderFlashcards(cards, segments) {
-  cards = verifiedFlashcards(cards, segments);
+  deckCards = verifiedFlashcards(cards, segments);
+  deckIndex = 0;
   var container = document.getElementById("flashcards-list");
-  document.getElementById("flashcards-count").textContent = cards.length + (cards.length === 1 ? " Card" : " Cards");
+  document.getElementById("flashcards-count").textContent = deckCards.length + (deckCards.length === 1 ? " Card" : " Cards");
   container.replaceChildren();
-  if (!cards.length) {
+  var dots = document.getElementById("deck-dots");
+  dots.replaceChildren();
+  document.querySelector(".deck-controls").hidden = !deckCards.length;
+  if (!deckCards.length) {
     container.innerHTML = "<p class='placeholder-text'>No flashcards with verbatim transcript evidence are available.</p>";
+    document.getElementById("deck-progress").textContent = "0 / 0";
     return;
   }
-  cards.forEach(function (card) {
+  deckCards.forEach(function (card, index) {
     var item = document.createElement("article");
     item.className = "flashcard";
-    item.innerHTML = "<button type='button' class='flashcard-flip' aria-pressed='false'><span class='flashcard-inner'><span class='flashcard-face flashcard-front'></span><span class='flashcard-face flashcard-back'><strong class='flashcard-answer'></strong><q class='flashcard-quote'></q></span></span></button><button type='button' class='citation-pill flashcard-jump'></button>";
-    var flip = item.querySelector(".flashcard-flip");
-    flip.setAttribute("aria-label", "Reveal answer: " + card.question);
-    item.querySelector(".flashcard-front").textContent = card.question;
+    item.innerHTML = "<button type='button' class='flashcard-flip' aria-pressed='false'><span class='flashcard-inner'>" +
+      "<span class='flashcard-face flashcard-front'><span class='flashcard-label'></span><span class='flashcard-question'></span><span class='flashcard-cue'>Tap to reveal the answer</span></span>" +
+      "<span class='flashcard-face flashcard-back'><span class='flashcard-label'>Answer</span><strong class='flashcard-answer'></strong><q class='flashcard-quote'></q></span>" +
+      "</span></button><button type='button' class='citation-pill flashcard-jump'></button>";
+    item.querySelector(".flashcard-front .flashcard-label").textContent = "Question " + String(index + 1).padStart(2, "0");
+    item.querySelector(".flashcard-question").textContent = card.question;
     item.querySelector(".flashcard-answer").textContent = card.answer;
     item.querySelector(".flashcard-quote").textContent = card.key_quote || "No supporting quote provided.";
+    var flip = item.querySelector(".flashcard-flip");
+    flip.setAttribute("aria-label", "Reveal answer: " + card.question);
     flip.addEventListener("click", function () {
+      if (Number(item.dataset.offset) !== 0) { showDeckCard(index); return; }
       var flipped = item.classList.toggle("flipped");
       flip.setAttribute("aria-pressed", String(flipped));
       flip.setAttribute("aria-label", (flipped ? "Show question: " : "Reveal answer: ") + card.question);
     });
     var jump = item.querySelector(".flashcard-jump");
-    jump.textContent = "[" + formatTime(card.start_sec) + "] Jump to evidence";
+    jump.textContent = formatTime(card.start_sec) + " · Jump to evidence";
     jump.addEventListener("click", function () { seekVideo(card.start_sec); });
     container.appendChild(item);
+    var dot = document.createElement("span");
+    dots.appendChild(dot);
   });
+  showDeckCard(0);
+}
+
+function showDeckCard(index) {
+  var items = Array.from(document.querySelectorAll("#flashcards-list .flashcard"));
+  if (!items.length) return;
+  deckIndex = (index + items.length) % items.length;
+  items.forEach(function (item, position) {
+    var offset = position - deckIndex;
+    item.dataset.offset = String(Math.max(-1, Math.min(offset, 3)));
+    item.setAttribute("aria-hidden", String(offset !== 0));
+    item.querySelectorAll("button").forEach(function (button) { button.tabIndex = offset === 0 ? 0 : -1; });
+    if (offset !== 0) item.classList.remove("flipped");
+  });
+  document.querySelectorAll("#deck-dots span").forEach(function (dot, position) { dot.classList.toggle("active", position === deckIndex); });
+  document.getElementById("deck-progress").textContent = (deckIndex + 1) + " / " + items.length;
+}
+
+function shuffleDeck() {
+  var container = document.getElementById("flashcards-list");
+  var items = Array.from(container.querySelectorAll(".flashcard"));
+  for (var i = items.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var swap = items[i]; items[i] = items[j]; items[j] = swap;
+  }
+  items.forEach(function (item) { container.appendChild(item); });
+  showDeckCard(0);
 }
 
 function renderChapters(chapters) {
@@ -596,8 +658,8 @@ function scrollToTranscriptTime(seconds) {
 function renderKnowledgeGraph(graphData) {
   var container = document.getElementById("graph-network");
   var groundedEdges = graphData.edges.filter(function (edge) { return edge.grounded; });
-  document.getElementById("stat-nodes").textContent = graphData.nodes.length + " Nodes";
-  document.getElementById("stat-edges").textContent = groundedEdges.length + " Grounded Edges";
+  document.getElementById("stat-nodes").textContent = graphData.nodes.length + (graphData.nodes.length === 1 ? " concept" : " concepts");
+  document.getElementById("stat-edges").textContent = groundedEdges.length + (groundedEdges.length === 1 ? " connection" : " connections");
   var edgeList = document.getElementById("graph-evidence-list");
   edgeList.replaceChildren();
   var labels = new Map(graphData.nodes.map(function (node) { return [node.id, node.label]; }));
@@ -631,27 +693,85 @@ function renderKnowledgeGraph(graphData) {
   var degree = {};
   groundedEdges.forEach(function (edge) { degree[edge.source] = (degree[edge.source] || 0) + 1; degree[edge.target] = (degree[edge.target] || 0) + 1; });
   var maxDegree = Math.max(1, ...Object.values(degree));
-  var nodes = graphData.nodes.map(function (node) {
-    return Object.assign({}, node, { title: node.label, mentions: node.mentions || [], size: 14 + 14 * (degree[node.id] || 0) / maxDegree });
+  // One colour per node type, in order of first appearance; the first type stays white.
+  var palette = ["#FAFAFA", "#3B82F6", "#F59E0B", "#22C55E", "#EF4444"];
+  var typeColors = {};
+  graphData.nodes.forEach(function (node) {
+    var type = node.type || "Concept";
+    if (!(type in typeColors)) typeColors[type] = palette[Object.keys(typeColors).length % palette.length];
   });
+  var nodes = graphData.nodes.map(function (node) {
+    var weight = (degree[node.id] || 0) / maxDegree;
+    var color = typeColors[node.type || "Concept"];
+    return Object.assign({}, node, {
+      title: (node.type || "Concept") + (node.description ? " · " + node.description : ""),
+      mentions: node.mentions || [],
+      size: 10 + 16 * weight,
+      color: { background: "#0B0B0B", border: color, highlight: { background: color, border: color }, hover: { background: "#1A1A1A", border: color } },
+      font: { color: "#FAFAFA", size: 12 + Math.round(4 * weight), face: "Inter, system-ui, sans-serif", strokeWidth: 4, strokeColor: "#030303" },
+      borderWidth: 1.5 + weight * 1.5
+    });
+  });
+  var showEdgeLabels = groundedEdges.length <= 30;
   var edges = groundedEdges.map(function (edge, index) {
-    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, title: edge.relation.replaceAll("_", " ").toLowerCase(), arrows: "to", timestamp_str: formatTime(edge.start_time) });
+    var label = edge.relation.replaceAll("_", " ").toLowerCase();
+    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, label: showEdgeLabels ? label : undefined, title: label + " · " + formatTime(edge.start_time), timestamp_str: formatTime(edge.start_time) });
   });
   var data = { nodes: new window.vis.DataSet(nodes), edges: new window.vis.DataSet(edges) };
   if (visNetworkInstance) visNetworkInstance.destroy();
   visNetworkInstance = new window.vis.Network(container, data, {
-    nodes: { shape: "dot", borderWidth: 1, color: { background: "#141414", border: "#FAFAFA", highlight: { background: "#F59E0B", border: "#F59E0B" }, hover: { background: "#262626", border: "#FFFFFF" } }, font: { color: "#FAFAFA", size: 13, face: "Inter, system-ui, sans-serif", strokeWidth: 0 } },
-    edges: { width: 1, color: { color: "#3A3A3A", highlight: "#3B82F6", hover: "#8F8F8F" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } }, smooth: { type: "continuous" }, font: { size: 0 } },
-    physics: { stabilization: { iterations: 200 }, barnesHut: { gravitationalConstant: -6000, springLength: 160, avoidOverlap: 0.6 } },
-    interaction: { hover: true, tooltipDelay: 150 }
+    nodes: { shape: "dot", shadow: false },
+    edges: {
+      width: 1.2, selectionWidth: 1.5, hoverWidth: 0.6,
+      color: { color: "rgba(255,255,255,0.22)", highlight: "#3B82F6", hover: "rgba(255,255,255,0.55)" },
+      arrows: { to: { enabled: true, scaleFactor: 0.45 } },
+      smooth: { type: "dynamic" },
+      font: { size: 10, color: "#8F8F8F", face: "Inter, system-ui, sans-serif", strokeWidth: 4, strokeColor: "#030303", align: "middle" }
+    },
+    physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -80, springLength: 140, avoidOverlap: 0.8 }, stabilization: { iterations: 300 } },
+    interaction: { hover: true, tooltipDelay: 200, navigationButtons: false }
   });
   var network = visNetworkInstance;
   network.once("stabilizationIterationsDone", function () {
     network.setOptions({ physics: false });
-    network.fit({ animation: false, padding: 40 });
+    network.fit({ animation: { duration: 400, easingFunction: "easeOutCubic" }, padding: 48 });
   });
-  visNetworkInstance.on("selectEdge", function (event) { if (event.edges.length) showEvidenceDrawer(data.edges.get(event.edges[0])); });
-  visNetworkInstance.on("selectNode", function (event) { if (event.nodes.length) showNodeMentions(data.nodes.get(event.nodes[0])); });
+  // Focus mode: dim everything that is not connected to the selection.
+  function focusOn(nodeIds) {
+    var keep = new Set(nodeIds);
+    data.nodes.update(nodes.map(function (node) { return { id: node.id, opacity: !nodeIds.length || keep.has(node.id) ? 1 : 0.15 }; }));
+    data.edges.update(edges.map(function (edge) {
+      var on = !nodeIds.length || (keep.has(edge.from) && keep.has(edge.to));
+      return { id: edge.id, hidden: false, color: { opacity: on ? 1 : 0.08 }, font: { color: on ? "#8F8F8F" : "rgba(143,143,143,0.1)" } };
+    }));
+  }
+  network.on("selectNode", function (event) {
+    if (!event.nodes.length) return;
+    var id = event.nodes[0];
+    focusOn([id].concat(network.getConnectedNodes(id)));
+    showNodeMentions(data.nodes.get(id));
+  });
+  network.on("selectEdge", function (event) {
+    if (event.nodes.length || !event.edges.length) return;
+    var edge = data.edges.get(event.edges[0]);
+    focusOn([edge.from, edge.to]);
+    showEvidenceDrawer(edge);
+  });
+  graphResetFocus = function () { focusOn([]); };
+  network.on("deselectNode", function () { focusOn([]); });
+  network.on("deselectEdge", function () { focusOn([]); });
+
+  var legend = document.getElementById("graph-legend");
+  legend.replaceChildren();
+  Object.keys(typeColors).forEach(function (type) {
+    var count = graphData.nodes.filter(function (node) { return (node.type || "Concept") === type; }).length;
+    var item = document.createElement("span");
+    item.className = "legend-item";
+    var swatch = document.createElement("i");
+    swatch.style.borderColor = typeColors[type];
+    item.append(swatch, document.createTextNode(type + " · " + count));
+    legend.appendChild(item);
+  });
 }
 
 function showEvidenceDrawer(edge) {
@@ -663,7 +783,7 @@ function showEvidenceDrawer(edge) {
   timestamp.disabled = false;
   document.getElementById("inspector-confidence").textContent = Math.round((edge.confidence == null ? 1 : edge.confidence) * 100) + "%";
   document.getElementById("inspector-mentions").classList.add("hidden");
-  document.getElementById("edge-evidence-drawer").classList.remove("hidden");
+  document.getElementById("edge-evidence-drawer").classList.remove("hidden", "node-mode");
 }
 
 function showNodeMentions(node) {
@@ -685,17 +805,22 @@ function showNodeMentions(node) {
     button.addEventListener("click", function () { seekVideo(mention.start); });
     panel.appendChild(button);
   });
-  document.getElementById("inspector-relation").textContent = "entity";
+  document.getElementById("inspector-relation").textContent = (node.type || "concept").toLowerCase() + (node.description ? " · " + node.description : "");
   document.getElementById("inspector-quote").textContent = "Select a mention to seek to its transcript timestamp.";
   document.getElementById("inspector-timestamp").disabled = true;
   document.getElementById("inspector-timestamp").textContent = "Select a mention";
   document.getElementById("inspector-confidence").textContent = "—";
   panel.classList.remove("hidden");
   document.getElementById("edge-evidence-drawer").classList.remove("hidden");
+  document.getElementById("edge-evidence-drawer").classList.add("node-mode");
 }
 
 function escapeRegExp(value) { return value.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&"); }
-function closeEvidenceDrawer() { document.getElementById("edge-evidence-drawer").classList.add("hidden"); }
+function closeEvidenceDrawer() {
+  document.getElementById("edge-evidence-drawer").classList.add("hidden");
+  if (visNetworkInstance) visNetworkInstance.unselectAll();
+  graphResetFocus();
+}
 
 function appendChatMessage(sender, text) {
   var message = document.createElement("div");
@@ -721,7 +846,7 @@ function appendBotResponse(result) {
     if (citation) {
       var chip = document.createElement("button");
       chip.type = "button";
-      chip.className = "citation-pill" + (citation.verified ? " verified" : "");
+      chip.className = "citation-pill";
       chip.textContent = "[" + match[1] + "]";
       chip.title = citation.quote || "Verified transcript evidence";
       chip.addEventListener("click", function () { seekVideo(citation.start_time); });
@@ -734,7 +859,7 @@ function appendBotResponse(result) {
   citations.filter(function (citation) { return !shown.has(citation); }).forEach(function (citation) {
     var chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "citation-pill verified";
+    chip.className = "citation-pill";
     chip.textContent = "[" + formatTime(citation.start_time) + "]";
     chip.title = citation.quote;
     chip.addEventListener("click", function () { seekVideo(citation.start_time); });

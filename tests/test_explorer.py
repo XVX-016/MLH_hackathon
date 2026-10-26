@@ -56,7 +56,7 @@ def test_landing_page_starts_with_hero_and_hidden_results() -> None:
         html = client.get("/").text
 
     assert '<section id="hero"' in html
-    assert '<svg class="hero-grid"' in html
+    assert '<svg class="hero-grid hero-scene"' in html  # animated waveform + timeline background
     assert 'id="btn-load-sample"' in html
     assert 'id="btn-upload"' in html
     assert 'id="processing-card"' in html
@@ -118,3 +118,14 @@ def test_page_routes_and_job_id_are_wired() -> None:
     # /ask is keyed by job id; uploads and URL jobs must pass theirs through.
     assert "currentJobId = jobId || data.video_id" in javascript
     assert "job_id: currentJobId" in javascript
+
+
+def test_flashcard_deck_graph_panel_and_no_qa_badge() -> None:
+    javascript = Path("app/static/app.js").read_text(encoding="utf-8")
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    for element in ("deck-prev", "deck-next", "deck-shuffle", "deck-progress", "graph-legend", "edge-evidence-drawer"):
+        assert f'id="{element}"' in html
+    assert 'class="graph-side"' in html
+    assert "Verified citations" not in html
+    assert "function showDeckCard" in javascript and "function shuffleDeck" in javascript
+    assert "function focusOn" in javascript
