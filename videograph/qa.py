@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from typing import Callable, List, Optional, Protocol, Sequence, Tuple
 
-import numpy as np
+# numpy is imported lazily inside TranscriptRetriever to allow graceful
+# degradation on deployments where it is not installed (e.g. Vercel free tier).
 from pydantic import BaseModel, Field
 
 from videograph.grounding import get_embed_model, is_grounded
@@ -25,7 +26,7 @@ class QAOutput(BaseModel):
 
 
 class Embedder(Protocol):
-    def encode(self, texts: Sequence[str], *, convert_to_numpy: bool, normalize_embeddings: bool) -> np.ndarray:
+    def encode(self, texts: Sequence[str], *, convert_to_numpy: bool, normalize_embeddings: bool) -> "np.ndarray":  # type: ignore[name-defined]
         ...
 
 
@@ -44,6 +45,7 @@ class TranscriptRetriever:
 
     def _build_index(self) -> None:
         try:
+            import numpy as np  # lazy – may not be installed on Vercel
             import faiss
             embeddings = self.embedder.encode(
                 [segment.text for segment in self.segments],
@@ -62,6 +64,7 @@ class TranscriptRetriever:
 
         if self.index is not None and self.embedder is not None:
             try:
+                import numpy as np  # lazy – may not be installed on Vercel
                 query = self.embedder.encode(
                     [question], convert_to_numpy=True, normalize_embeddings=True
                 ).astype(np.float32)

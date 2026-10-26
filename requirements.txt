@@ -7,6 +7,7 @@ rapidfuzz==3.14.3
 google-genai==2.33.0
 python-multipart==0.0.22
 python-dotenv==1.2.2
+numpy>=1.26.0
 yt-dlp>=2026.10.21
 imageio-ffmpeg==0.6.0
 youtube-transcript-api>=1.2.4

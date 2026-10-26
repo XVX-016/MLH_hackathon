@@ -12,7 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
-import imageio_ffmpeg
+# imageio_ffmpeg is imported lazily inside get_ffmpeg_binary() so this module
+# can be imported on deployments where it is not installed (e.g. Vercel).
 
 from videograph.schemas import Segment
 
@@ -45,6 +46,7 @@ def get_ffmpeg_binary() -> str:
     if sys_ffmpeg:
         return sys_ffmpeg
     try:
+        import imageio_ffmpeg  # lazy – may not be installed on Vercel
         return imageio_ffmpeg.get_ffmpeg_exe()
     except Exception:
         return "ffmpeg"
