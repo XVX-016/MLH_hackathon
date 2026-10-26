@@ -32,11 +32,56 @@ def test_upload_validation_rejects_unsupported_media() -> None:
     assert response.status_code == 415
 
 
-def test_url_endpoint_explains_the_supported_path() -> None:
+def test_youtube_metadata_and_url_process_endpoints(monkeypatch) -> None:
+    fake_meta = {
+        "title": "Attention is All You Need",
+        "duration": 120.0,
+        "channel": "AI Research",
+        "thumbnail": "https://example.com/thumb.jpg",
+        "url": "https://www.youtube.com/watch?v=mock_video",
+    }
+    monkeypatch.setattr("app.main.fetch_youtube_metadata", lambda url: fake_meta)
+    monkeypatch.setattr(
+        "app.main._process_youtube_url",
+        lambda job_id, url, model: JOBS.update({job_id: {"status": "completed", "demo": False}}),
+    )
+
     with TestClient(app) as client:
-        response = client.post("/api/analyze/url", data={"url": "https://example.com/video.mp4"})
-    assert response.status_code == 501
-    assert "upload" in response.json()["detail"].lower()
+        # Test metadata endpoint
+        meta_res = client.post("/api/youtube/metadata", json={"url": "https://www.youtube.com/watch?v=mock_video"})
+        assert meta_res.status_code == 200
+        assert meta_res.json()["title"] == "Attention is All You Need"
+        assert meta_res.json()["duration"] == 120.0
+
+        # Test process/url endpoint
+        proc_res = client.post("/process/url", json={"url": "https://www.youtube.com/watch?v=mock_video"})
+        assert proc_res.status_code == 202
+        data = proc_res.json()
+        assert "job_id" in data
+        assert data["status"] == "queued"
+
+        # Check job in status endpoint
+        job_id = data["job_id"]
+        status_res = client.get(f"/status/{job_id}")
+        assert status_res.status_code == 200
+        assert status_res.json()["status"] in ("queued", "processing", "completed")
+
+
+def test_youtube_url_rejects_exceeding_duration(monkeypatch) -> None:
+    fake_meta = {
+        "title": "Super Long Video",
+        "duration": 9999.0,
+        "channel": "Long Channel",
+        "thumbnail": "",
+        "url": "https://www.youtube.com/watch?v=long_video",
+    }
+    monkeypatch.setattr("app.main.fetch_youtube_metadata", lambda url: fake_meta)
+
+    with TestClient(app) as client:
+        res = client.post("/process/url", json={"url": "https://www.youtube.com/watch?v=long_video"})
+        assert res.status_code == 413
+        assert "exceeds" in res.json()["detail"].lower()
+
 
 
 def test_cli_demo_pipeline(tmp_path) -> None:
