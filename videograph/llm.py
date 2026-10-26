@@ -99,29 +99,36 @@ def call_llm_raw(prompt: str, model: str = "gemma-4-it") -> str:
         client = genai.Client(api_key=api_key)
         
         # Primary requested model is Gemma 4 / Gemini
-        # If gemma-4 is requested, use gemma-4 or gemini fallback if not allowed on endpoint
-        models_to_try = [model, "gemini-3.5-flash-lite", "gemini-3.5-flash"]
+        import time
 
+        models_to_try = [model, "gemini-3.5-flash-lite", "gemini-3.5-flash"]
         last_error = None
 
         for m in models_to_try:
-            try:
-                response = client.models.generate_content(
-                    model=m,
-                    contents=prompt,
-                )
-                text = response.text or ""
-                if text:
-                    write_cache(cache_key, text)
-                    return text
-            except Exception as e:
-                last_error = e
-                continue
+            for attempt in range(3):
+                try:
+                    response = client.models.generate_content(
+                        model=m,
+                        contents=prompt,
+                    )
+                    text = response.text or ""
+                    if text:
+                        write_cache(cache_key, text)
+                        return text
+                except Exception as e:
+                    last_error = e
+                    err_str = str(e)
+                    # If model is experiencing temporary high demand, back off briefly
+                    if "503" in err_str or "UNAVAILABLE" in err_str:
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    break
 
         raise RuntimeError(f"All LLM candidate models failed. Last error: {last_error}")
 
     except Exception as e:
         raise RuntimeError(f"LLM call failed: {e}")
+
 
 
 def call_llm_json(
