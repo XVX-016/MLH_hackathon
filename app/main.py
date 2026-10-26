@@ -101,6 +101,7 @@ def _result_payload(job: Dict[str, Any]) -> Dict[str, Any]:
         "duration": analysis.duration,
         "transcript": [segment.model_dump() for segment in analysis.transcript],
         "chapters": [chapter.model_dump() for chapter in analysis.chapters],
+        "flashcards": [card.model_dump() for card in analysis.flashcards],
         "summary": analysis.summary,
         "graph": analysis.graph.model_dump(),
         "grounding": _grounding_stats(analysis),

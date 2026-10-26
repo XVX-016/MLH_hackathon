@@ -16,6 +16,32 @@
     {"title": "Why use multiple heads", "start_sec": 28.0, "summary": "Parallel heads capture different kinds of relationships."},
     {"title": "Evidence-grounded answers", "start_sec": 61.0, "summary": "Answers must expose their supporting quote and time."}
   ],
+  "flashcards": [
+    {
+      "id": 0,
+      "question": "What is the primary role of attention in neural networks?",
+      "answer": "Attention allows a model to weigh tokens that are most relevant to the current prediction.",
+      "key_quote": "Attention lets a model weigh the tokens that are most relevant to the current prediction.",
+      "start_sec": 0.0,
+      "end_sec": 13.0
+    },
+    {
+      "id": 1,
+      "question": "How do queries, keys, and values interact in attention?",
+      "answer": "The query is compared against keys to generate attention weights, which then select information from values.",
+      "key_quote": "The query compares with keys, and the resulting weights select information from values.",
+      "start_sec": 13.0,
+      "end_sec": 28.0
+    },
+    {
+      "id": 2,
+      "question": "Why is multi-head attention beneficial?",
+      "answer": "It runs the attention mechanism in parallel so different heads can focus on different relationships simultaneously.",
+      "key_quote": "Multi-head attention repeats this process in parallel so different heads can focus on different relationships.",
+      "start_sec": 28.0,
+      "end_sec": 45.0
+    }
+  ],
   "graph": {
     "nodes": [
       {"id": "attention", "label": "Attention", "type": "Concept", "description": "Context relevance weighting"},

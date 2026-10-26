@@ -121,6 +121,23 @@ class Chapter(BaseModel):
     summary: str = Field(..., description="Brief summary of the chapter")
 
 
+class Flashcard(BaseModel):
+    """Educational Q&A flashcard grounded in transcript evidence."""
+    id: Optional[int] = Field(default=0, description="Flashcard identifier")
+    question: str = Field(..., description="Front of flashcard: conceptual question or prompt")
+    answer: str = Field(..., description="Back of flashcard: concise grounded answer")
+    key_quote: Optional[str] = Field(default="", description="Verbatim transcript quote supporting the answer")
+    start_sec: float = Field(..., description="Start timestamp in seconds")
+    end_sec: float = Field(..., description="End timestamp in seconds")
+
+    @property
+    def timestamp_str(self) -> str:
+        """Formatted [MM:SS] timestamp."""
+        m = int(self.start_sec // 60)
+        s = int(self.start_sec % 60)
+        return f"{m:02d}:{s:02d}"
+
+
 # Backwards compatibility aliases
 VideoChapter = Chapter
 TranscriptChunk = Chunk
@@ -172,4 +189,6 @@ class VideoAnalysisResult(BaseModel):
     summary: str
     transcript: List[Segment] = Field(default_factory=list)
     chapters: List[Chapter] = Field(default_factory=list)
+    flashcards: List[Flashcard] = Field(default_factory=list)
     graph: KnowledgeGraph = Field(default_factory=KnowledgeGraph)
+

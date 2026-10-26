@@ -7,20 +7,37 @@
 **videograph** transforms any video into:
 1. **Timestamped Verbatim Transcript** (divided into spoken cue segments)
 2. **Chronological Video Chapters & Executive Summary**
-3. **Evidence-Grounded Knowledge Graph** (where **EVERY single edge** carries an exact quote, `[MM:SS]` start/end timestamps, and verification confidence)
-4. **Grounded Q&A Engine** with `[MM:SS]` citations rigorously verified against the transcript via RapidFuzz + FAISS semantic retrieval.
+3. **Interactive Study Flashcards** (grounded with verbatim quotes and `[MM:SS]` video timestamps)
+4. **Evidence-Grounded Knowledge Graph** (where **EVERY single edge** carries an exact quote, `[MM:SS]` start/end timestamps, and verification confidence)
+5. **Grounded Q&A Engine** with `[MM:SS]` citations rigorously verified against the transcript via RapidFuzz + FAISS semantic retrieval.
+
+## Frontend Experience & User Flow
+
+The application provides a seamless, distraction-free study experience:
+
+1. **Intuitive YouTube Ingestion Bar**:
+   - The user pastes any YouTube video link (or uses the 1-click Offline Demo / file upload fallback).
+   - VideoGraph fetches the video details (Title, Duration, Channel) and immediately starts background processing.
+2. **Interactive Results Interface**:
+   - Once ready, the dashboard features the **Video Title prominently on top**.
+   - The content is organized into **three primary tabs**:
+     - 📑 **Summary**: Executive overview, chronological chapters with `[MM:SS]` jump points, and key takeaways.
+     - 🗂️ **Flashcards**: Interactive flip cards for rapid learning—each card contains a conceptual question on the front, and on the back provides a concise explanation, supporting verbatim quote, and a clickable timestamp to jump directly to the relevant moment in the video.
+     - 🕸️ **Graph**: Interactive Vis.js knowledge graph topology mapping concepts, technologies, and verified relationships with evidence inspection modals.
+3. **Grounded Q&A Panel**:
+   - Always accessible to ask any question and receive instant answers citing exact timestamp ranges verified against transcript cues.
 
 ## Team workflow & Agent Division
 
 This Hacktoberfest build is divided among three human owners with scoped coding agent workflows:
 
-- **Hardik** *(Lead & Integration)*: Owns the API contracts (`videograph/schemas.py`), FastAPI integration (`app/main.py`), CLI (`videograph/cli.py`), Docker/deployment, offline demo pipeline, and repo integrity checks.
-- **Tanmmay** *(Media Intelligence)*: Owns ingestion (`yt-dlp`), audio extraction (`ffmpeg`), VTT/SRT parsing, chunking, and structured LLM extraction for chapters & takeaways.
-- **Faariz** *(Evidence Explorer & Heavy Agentic Lane — Codex / Claude)*: Takes on the heavy reasoning and algorithmic workloads:
+- **Hardik** *(Lead & Integration)*: Owns the API contracts (`videograph/schemas.py`: adding `Flashcard` model & response shapes), FastAPI endpoints (`app/main.py`), CLI (`videograph/cli.py`), Docker/deployment, offline demo pipeline, and repo integrity checks.
+- **Tanmmay** *(Media Intelligence)*: Owns video/audio ingestion (`yt-dlp`), YouTube metadata fetching, 16kHz audio conversion (`ffmpeg`), VTT/SRT parsing, chunking, and structured LLM extraction for chapters, summary, and **study flashcards**.
+- **Faariz** *(Evidence Explorer & Heavy Agentic Lane — Codex / Claude)*: Takes on the heavy reasoning, algorithmic, and visual interface workloads:
+  - **Frontend 3-Tab Architecture** (`app/static/**`): Builds the YouTube input bar, video title header, and 3 tab views (**Summary** | **Flashcards** | **Graph**) with responsive design and flip animations.
   - **Entity Resolution & Knowledge Graph** (`videograph/resolve.py`, `videograph/graph.py`): Entity clustering, deduplication, and NetworkX / Vis.js network serialization.
   - **Evidence Grounding Engine** (`videograph/grounding.py`): RapidFuzz + N-gram fuzzy quote alignment, timestamp boundary verification, and confidence scoring.
   - **Semantic Retrieval & Grounded Q&A** (`videograph/qa.py`): Dense vector retrieval (FAISS), hybrid search, and citation verification.
-  - **Interactive Dashboard UI** (`app/static/**`): Vis-network graph rendering, synchronized transcript scrubber, and timestamp-seeking UX.
   - **Evaluation & Benchmarking** (`eval/**`): Automated citation precision, recall, and hallucination scoring against ground-truth datasets.
 
 ### Mandatory Agent Start Gate

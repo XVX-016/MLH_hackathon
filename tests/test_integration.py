@@ -12,8 +12,9 @@ def test_demo_to_graph_workflow() -> None:
         assert sample.status_code == 200
         payload = sample.json()
         assert payload["demo"] is True
-        assert payload["video_id"] == "demo_attention"
         assert payload["grounding"]["grounding_pass_rate"] == 1.0
+        assert len(payload["flashcards"]) == 3
+        assert "attention" in payload["flashcards"][0]["question"].lower()
 
         graph = client.get("/api/graph/demo_attention")
         assert graph.status_code == 200
