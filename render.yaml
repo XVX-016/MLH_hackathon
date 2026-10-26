@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: seekwise
+    runtime: docker
+    plan: free
+    region: oregon
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
