@@ -1,0 +1,17 @@
+{
+  "Hardik": [
+    "AGENTS.md", "README.md", "Dockerfile", "requirements.txt", ".env.example",
+    ".github/**", "docs/**", "team/**", "tools/**", "app/main.py",
+    "videograph/schemas.py", "videograph/cli.py", "videograph/__init__.py",
+    "tests/test_integration.py", "tests/test_videograph.py"
+  ],
+  "Tanmmay": [
+    "videograph/ingest.py", "videograph/transcribe.py", "videograph/chunk.py",
+    "videograph/prompts.py", "videograph/extract.py", "videograph/llm.py",
+    "tests/test_pipeline.py"
+  ],
+  "Faariz": [
+    "videograph/resolve.py", "videograph/graph.py", "videograph/grounding.py",
+    "videograph/qa.py", "eval/**", "app/static/**", "tests/test_explorer.py"
+  ]
+}

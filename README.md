@@ -10,6 +10,17 @@
 3. **Evidence-Grounded Knowledge Graph** (where **EVERY single edge** carries an exact quote, `[MM:SS]` start/end timestamps, and verification confidence)
 4. **Grounded Q&A Engine** with `[MM:SS]` citations rigorously verified against the transcript via RapidFuzz + FAISS semantic retrieval.
 
+## Team workflow
+
+This Hacktoberfest build uses a protected three-member workflow: **Hardik** owns
+integration and the public contract, **Tanmmay** owns media intelligence, and
+**Faariz** owns the evidence explorer. Every coding agent must first receive an
+exact name confirmation from one of those members and may edit only that owner's
+paths. The complete build order, handoff format, and acceptance criteria are in
+[docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md); the machine-checkable ownership
+map and local gate are in `team/ownership.json` and
+`tools/verify_ownership.py`.
+
 ---
 
 ## Architecture & Package Layout
