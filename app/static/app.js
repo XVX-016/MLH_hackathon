@@ -2,13 +2,28 @@
 let currentAnalysis = null;
 let currentJobId = null;
 let currentVideoUrl = null;
+let currentYoutubeId = null;
 let visNetworkInstance = null;
 
 document.addEventListener("DOMContentLoaded", function () {
   initForms();
   document.getElementById("btn-load-sample").addEventListener("click", loadDemo);
   document.getElementById("btn-close-drawer").addEventListener("click", closeEvidenceDrawer);
+  document.getElementById("inspector-timestamp").addEventListener("click", function (event) {
+    seekVideo(event.currentTarget.dataset.start);
+  });
   document.getElementById("video-player").addEventListener("timeupdate", updateActiveTranscript);
+  document.querySelectorAll(".study-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () { selectTab(tab); });
+    tab.addEventListener("keydown", function (event) {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      var tabs = Array.from(document.querySelectorAll(".study-tab"));
+      var next = tabs[(tabs.indexOf(tab) + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      selectTab(next);
+      next.focus();
+    });
+  });
 });
 
 function formatTime(seconds) {
@@ -23,21 +38,49 @@ async function readJson(response) {
 }
 
 function initForms() {
+  document.getElementById("form-url").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    var url = document.getElementById("input-url").value.trim();
+    var youtubeId = getYoutubeId(url);
+    if (!youtubeId) {
+      showInputError("Enter a valid YouTube video URL.");
+      return;
+    }
+    showInputError("");
+    toggleLoading(true, "Processing YouTube link...");
+    try {
+      var formData = new FormData();
+      formData.append("url", url);
+      formData.append("model", document.getElementById("select-model-file").value);
+      var result = await readJson(await fetch("/api/analyze/url", { method: "POST", body: formData }));
+      if (result.job_id) {
+        await waitForResult(result.job_id);
+        result = await readJson(await fetch("/result/" + result.job_id));
+      }
+      loadAnalysisData(result, null, youtubeId);
+    } catch (error) {
+      showInputError(error.message);
+    } finally {
+      toggleLoading(false);
+    }
+  });
+
   document.getElementById("form-upload").addEventListener("submit", async function (event) {
     event.preventDefault();
     var file = document.getElementById("input-file").files[0];
     if (!file) return;
+    showInputError("");
     toggleLoading(true, "Uploading and processing...");
     try {
       var formData = new FormData();
       formData.append("file", file);
       formData.append("model", document.getElementById("select-model-file").value);
       var job = await readJson(await fetch("/process", { method: "POST", body: formData }));
-      currentJobId = job.job_id;
-      await waitForResult(currentJobId);
-      loadAnalysisData(await readJson(await fetch("/result/" + currentJobId)), URL.createObjectURL(file));
+      await waitForResult(job.job_id);
+      var playable = /\.(mp4|mkv|webm|mp3|wav)$/i.test(file.name);
+      loadAnalysisData(await readJson(await fetch("/result/" + job.job_id)), playable ? URL.createObjectURL(file) : null);
     } catch (error) {
-      appendChatMessage("system", "Processing failed: " + error.message);
+      showInputError("Processing failed: " + error.message);
     } finally {
       toggleLoading(false);
     }
@@ -69,14 +112,43 @@ function initForms() {
   });
 }
 
+function getYoutubeId(value) {
+  try {
+    var url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    var host = url.hostname.toLowerCase();
+    var id = host === "youtu.be" ? url.pathname.slice(1) :
+      ["youtube.com", "www.youtube.com", "m.youtube.com"].includes(host) ?
+        (url.searchParams.get("v") || url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/)?.[1]) : null;
+    return /^[-\w]{11}$/.test(id || "") ? id : null;
+  } catch (_) { return null; }
+}
+
+function showInputError(message) {
+  var element = document.getElementById("input-error");
+  element.textContent = message;
+  element.classList.toggle("hidden", !message);
+}
+
+function selectTab(tab) {
+  document.querySelectorAll(".study-tab").forEach(function (item) {
+    var selected = item === tab;
+    item.classList.toggle("active", selected);
+    item.setAttribute("aria-selected", String(selected));
+    item.tabIndex = selected ? 0 : -1;
+    document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
+  });
+  if (tab.id === "tab-graph" && currentAnalysis) renderKnowledgeGraph(currentAnalysis.graph || { nodes: [], edges: [] });
+}
+
 async function loadDemo() {
   try {
+    showInputError("");
     var status = await readJson(await fetch("/status/demo_attention"));
     if (status.status !== "completed") throw new Error("Demo result is not ready");
-    currentJobId = "demo_attention";
     loadAnalysisData(await readJson(await fetch("/result/demo_attention")));
   } catch (error) {
-    appendChatMessage("system", "Could not load demo: " + error.message);
+    showInputError("Could not load demo: " + error.message);
   }
 }
 
@@ -95,20 +167,63 @@ function toggleLoading(loading, text) {
   if (text) document.getElementById("processing-status-text").textContent = text;
 }
 
-function loadAnalysisData(data, videoUrl) {
+function loadAnalysisData(data, videoUrl, youtubeId) {
   currentAnalysis = data;
+  currentJobId = data.video_id;
   if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
   currentVideoUrl = videoUrl || null;
+  currentYoutubeId = youtubeId || null;
   var player = document.getElementById("video-player");
   player.src = videoUrl || "";
   player.classList.toggle("hidden", !videoUrl);
-  document.getElementById("video-player-placeholder").classList.toggle("hidden", Boolean(videoUrl));
+  var youtubePlayer = document.getElementById("youtube-player");
+  youtubePlayer.src = youtubeId ? "https://www.youtube.com/embed/" + youtubeId : "";
+  youtubePlayer.classList.toggle("hidden", !youtubeId);
+  document.getElementById("video-player-placeholder").classList.toggle("hidden", Boolean(videoUrl || youtubeId));
   document.getElementById("video-title").textContent = data.title || "Untitled Video";
   document.getElementById("video-duration-badge").textContent = formatTime(data.duration);
   document.getElementById("video-summary").textContent = data.summary || "No summary provided.";
   renderChapters(data.chapters || []);
+  renderFlashcards(data.flashcards || [], data.transcript || []);
   renderTranscript(data.transcript || []);
-  renderKnowledgeGraph(data.graph || { nodes: [], edges: [] });
+  closeEvidenceDrawer();
+  if (!document.getElementById("panel-graph").hidden) renderKnowledgeGraph(data.graph || { nodes: [], edges: [] });
+}
+
+function renderFlashcards(cards, segments) {
+  cards = cards.filter(function (card) {
+    var quote = String(card.key_quote || "").toLowerCase().replace(/\s+/g, " ").trim();
+    var evidence = segments.filter(function (segment) {
+      return segment.end >= card.start_sec && segment.start <= card.end_sec;
+    }).map(function (segment) { return segment.text; }).join(" ").toLowerCase().replace(/\s+/g, " ");
+    return quote && evidence.includes(quote);
+  });
+  var container = document.getElementById("flashcards-list");
+  document.getElementById("flashcards-count").textContent = cards.length + (cards.length === 1 ? " Card" : " Cards");
+  container.replaceChildren();
+  if (!cards.length) {
+    container.innerHTML = "<p class='placeholder-text'>No flashcards with verbatim transcript evidence are available.</p>";
+    return;
+  }
+  cards.forEach(function (card) {
+    var item = document.createElement("article");
+    item.className = "flashcard";
+    item.innerHTML = "<button type='button' class='flashcard-flip' aria-pressed='false'><span class='flashcard-inner'><span class='flashcard-face flashcard-front'></span><span class='flashcard-face flashcard-back'><strong class='flashcard-answer'></strong><q class='flashcard-quote'></q></span></span></button><button type='button' class='citation-pill flashcard-jump'></button>";
+    var flip = item.querySelector(".flashcard-flip");
+    flip.setAttribute("aria-label", "Reveal answer: " + card.question);
+    item.querySelector(".flashcard-front").textContent = card.question;
+    item.querySelector(".flashcard-answer").textContent = card.answer;
+    item.querySelector(".flashcard-quote").textContent = card.key_quote || "No supporting quote provided.";
+    flip.addEventListener("click", function () {
+      var flipped = item.classList.toggle("flipped");
+      flip.setAttribute("aria-pressed", String(flipped));
+      flip.setAttribute("aria-label", (flipped ? "Show question: " : "Reveal answer: ") + card.question);
+    });
+    var jump = item.querySelector(".flashcard-jump");
+    jump.textContent = "[" + formatTime(card.start_sec) + "] Jump to evidence";
+    jump.addEventListener("click", function () { seekVideo(card.start_sec); });
+    container.appendChild(item);
+  });
 }
 
 function renderChapters(chapters) {
@@ -159,10 +274,12 @@ function renderTranscript(segments) {
 
 function seekVideo(seconds, scroll) {
   var player = document.getElementById("video-player");
-  if (player.src) {
+  if (currentVideoUrl) {
     player.currentTime = Number(seconds) || 0;
     player.play().catch(function () {});
   }
+  if (currentYoutubeId) document.getElementById("youtube-player").src =
+    "https://www.youtube.com/embed/" + currentYoutubeId + "?start=" + Math.max(0, Math.floor(Number(seconds) || 0)) + "&autoplay=1";
   if (scroll !== false) scrollToTranscriptTime(seconds);
 }
 
@@ -181,17 +298,35 @@ function scrollToTranscriptTime(seconds) {
 
 function renderKnowledgeGraph(graphData) {
   var container = document.getElementById("graph-network");
+  var groundedEdges = graphData.edges.filter(function (edge) { return edge.grounded; });
   document.getElementById("stat-nodes").textContent = graphData.nodes.length + " Nodes";
-  document.getElementById("stat-edges").textContent = graphData.edges.length + " Grounded Edges";
+  document.getElementById("stat-edges").textContent = groundedEdges.length + " Grounded Edges";
   if (!window.vis) {
-    container.textContent = "Graph library unavailable.";
+    container.replaceChildren();
+    var fallback = document.createElement("div");
+    fallback.className = "graph-fallback";
+    graphData.nodes.forEach(function (node) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = node.label;
+      button.addEventListener("click", function () { showNodeMentions(node); });
+      fallback.appendChild(button);
+    });
+    groundedEdges.forEach(function (edge) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = edge.source + " → " + edge.relation + " → " + edge.target + " [" + formatTime(edge.start_time) + "]";
+      button.addEventListener("click", function () { showEvidenceDrawer(edge); });
+      fallback.appendChild(button);
+    });
+    container.appendChild(fallback);
     return;
   }
   var nodes = graphData.nodes.map(function (node) {
     return Object.assign({}, node, { title: node.label, group: node.type, mentions: node.mentions || [] });
   });
-  var edges = graphData.edges.map(function (edge, index) {
-    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, label: edge.relation, arrows: "to", timestamp_str: formatTime(edge.start_time) });
+  var edges = groundedEdges.map(function (edge, index) {
+    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, label: window.innerWidth < 600 ? "" : edge.relation, arrows: "to", timestamp_str: formatTime(edge.start_time) });
   });
   var data = { nodes: new window.vis.DataSet(nodes), edges: new window.vis.DataSet(edges) };
   if (visNetworkInstance) visNetworkInstance.destroy();
@@ -206,13 +341,15 @@ function renderKnowledgeGraph(graphData) {
 }
 
 function showEvidenceDrawer(edge) {
-  document.getElementById("inspector-relation").textContent = edge.label || "RELATION";
+  document.getElementById("inspector-relation").textContent = edge.relation || edge.label || "RELATION";
   document.getElementById("inspector-quote").textContent = "“" + (edge.evidence_quote || "No quote") + "”";
-  document.getElementById("inspector-timestamp").textContent = "[" + formatTime(edge.start_time) + "]";
+  var timestamp = document.getElementById("inspector-timestamp");
+  timestamp.textContent = "[" + formatTime(edge.start_time) + "] Jump to evidence";
+  timestamp.dataset.start = edge.start_time;
+  timestamp.disabled = false;
   document.getElementById("inspector-confidence").textContent = Math.round((edge.confidence == null ? 1 : edge.confidence) * 100) + "%";
   document.getElementById("inspector-mentions").classList.add("hidden");
   document.getElementById("edge-evidence-drawer").classList.remove("hidden");
-  seekVideo(edge.start_time);
 }
 
 function showNodeMentions(node) {
@@ -236,6 +373,9 @@ function showNodeMentions(node) {
   });
   document.getElementById("inspector-relation").textContent = "ENTITY";
   document.getElementById("inspector-quote").textContent = "Select a mention to seek to its transcript timestamp.";
+  document.getElementById("inspector-timestamp").disabled = true;
+  document.getElementById("inspector-timestamp").textContent = "Select a mention";
+  document.getElementById("inspector-confidence").textContent = "—";
   panel.classList.remove("hidden");
   document.getElementById("edge-evidence-drawer").classList.remove("hidden");
 }
@@ -256,7 +396,8 @@ function appendBotResponse(result) {
   var message = document.createElement("div");
   message.className = "qa-message bot-message";
   var answer = String(result.answer || "");
-  var citations = result.citations || [];
+  var citations = (result.citations || []).filter(function (item) { return item.verified; });
+  var shown = new Set();
   var pattern = /\[(\d{2}:\d{2})\]/g;
   var cursor = 0;
   var match;
@@ -271,10 +412,20 @@ function appendBotResponse(result) {
       chip.title = citation.quote || "Verified transcript evidence";
       chip.addEventListener("click", function () { seekVideo(citation.start_time); });
       message.appendChild(chip);
-    } else message.appendChild(document.createTextNode(match[0]));
+      shown.add(citation);
+    }
     cursor = pattern.lastIndex;
   }
   message.appendChild(document.createTextNode(answer.slice(cursor)));
+  citations.filter(function (citation) { return !shown.has(citation); }).forEach(function (citation) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "citation-pill verified";
+    chip.textContent = "[" + formatTime(citation.start_time) + "]";
+    chip.title = citation.quote;
+    chip.addEventListener("click", function () { seekVideo(citation.start_time); });
+    message.appendChild(chip);
+  });
   var history = document.getElementById("qa-chat-history");
   history.appendChild(message);
   history.scrollTop = history.scrollHeight;

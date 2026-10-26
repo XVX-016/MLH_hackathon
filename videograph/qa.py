@@ -127,6 +127,8 @@ def answer_question(
         for citation in output.citations
         if is_grounded(citation.quote, segments, citation.start_time, citation.end_time)
     ]
+    if not verified:
+        return QAResponse(question=question, answer=NO_CONTEXT_ANSWER, citations=[], grounded=False)
     return QAResponse(
         question=question,
         answer=output.answer,
