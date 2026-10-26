@@ -405,7 +405,8 @@ def fetch_youtube_transcript_api(
                 message="YouTube transcript was empty.",
                 reason="empty_transcript",
             )
-        return segments
+        from videograph.transcribe import deduplicate_rolling_segments
+        return deduplicate_rolling_segments(segments)
 
     except NeedsUpload:
         raise

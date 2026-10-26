@@ -37,8 +37,8 @@ Rules:
 Chunk gists:
 {chunk_gists}
 
-Return ONLY JSON:
-{{"chapters": [{{"title": "...", "start_sec": 0.0, "summary": "..."}}]}}
+Return ONLY valid JSON matching this exact structure:
+{{"chapters": [{{"title": "Concise Title Here", "start_sec": 0.0, "summary": "One sentence summary."}}]}}
 """
 
 SUMMARY_PROMPT = """
@@ -62,7 +62,7 @@ Return ONLY JSON:
 
 EXTRACT_GRAPH_PROMPT = """
 You are an expert knowledge graph engineer. Analyze the following video transcript chunk.
-Extract the key entities (Concepts, Technologies, People, Organizations, Methods) and directed relationships between them.
+Extract key entities (Concepts, Technologies, People, Organizations, Methods) and directed relationships between them.
 
 CRITICAL REQUIREMENTS:
 - EVERY edge MUST carry `evidence_quote`: one contiguous passage copied character for character from the transcript.
@@ -101,9 +101,12 @@ Return ONLY valid JSON matching this exact structure:
 """
 
 EXTRACTION_PROMPT = """
-Extract a compact, evidence-grounded knowledge representation from this
-timestamped transcript chunk. Return only facts explicitly supported by an
-exact quote in the chunk.
+Extract a compact, evidence-grounded knowledge representation from this timestamped transcript chunk.
+Return only facts explicitly supported by an exact verbatim quote copied from the chunk.
+
+Rules:
+1. Every quote MUST be an exact verbatim substring from the transcript text (max 25 words). Never paraphrase.
+2. Predicates should be specific informative verbs ("announces", "priced at", "powered by", "replaces", "implements", "controls", "improves", "contrasts with"). Avoid generic "uses", "is", "has".
 
 Chunk start: {chunk_start:.1f}
 Chunk end: {chunk_end:.1f}
@@ -118,11 +121,11 @@ Return ONLY valid JSON matching this structure:
   "relations": [
     {{
       "subject": "Entity name or alias",
-      "predicate": "USES",
+      "predicate": "implements",
       "object": "Entity name or alias",
-      "quote": "exact transcript quote of at most 25 words",
-      "start_sec": 0.0,
-      "end_sec": 5.0
+      "quote": "exact verbatim transcript quote",
+      "start_sec": {chunk_start:.1f},
+      "end_sec": {chunk_end:.1f}
     }}
   ]
 }}
@@ -196,7 +199,7 @@ Return ONLY valid JSON matching this structure:
   "flashcards": [
     {{
       "id": 0,
-      "question": "What is the purpose of...?",
+      "question": "What is the primary function of...?",
       "answer": "Concise grounded answer here.",
       "key_quote": "exact verbatim phrase from transcript",
       "start_sec": {chunk_start:.1f},

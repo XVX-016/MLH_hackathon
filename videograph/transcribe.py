@@ -180,7 +180,136 @@ def parse_vtt_or_srt(file_content: str) -> List[Segment]:
     flush_current()
     if not segments:
         raise ValueError("Malformed subtitle format: no valid timestamped cues found.")
-    return segments
+    return deduplicate_rolling_segments(segments)
+
+
+def deduplicate_rolling_segments(segments: List[Segment]) -> List[Segment]:
+    """Dedupe rolling auto-captions and merge short fragments into clean sentences.
+
+    1. Collapse whitespace and strip music/sound tags like [Music], [Applause], (cheers).
+    2. Merge rolling overlapping captions where a segment starts with or is contained in
+       the previous segment (or vice versa), preserving earlier start and later end.
+    3. Drop exact repeat lines.
+    4. Merge tiny fragments into coherent sentence segments.
+    """
+    if not segments:
+        return []
+
+    def clean_text(t: str) -> str:
+        # Strip bracketed audio markers: [Music], (applause), etc.
+        t = re.sub(r"\[[^\]]*\]|\([^\)]*\)", "", t)
+        # Collapse whitespace
+        t = re.sub(r"\s+", " ", t).strip()
+        return t
+
+    cleaned_initial: List[Segment] = []
+    for s in segments:
+        text = clean_text(s.text)
+        if text:
+            cleaned_initial.append(
+                Segment(id=s.id or 0, start=s.start, end=s.end, text=text)
+            )
+
+    if not cleaned_initial:
+        return []
+
+    # Step 2: Merge rolling overlaps and duplicates
+    merged: List[Segment] = []
+    for seg in cleaned_initial:
+        if not merged:
+            merged.append(seg)
+            continue
+
+        prev = merged[-1]
+        prev_norm = prev.text.casefold().strip()
+        curr_norm = seg.text.casefold().strip()
+
+        # Exact repeat
+        if prev_norm == curr_norm:
+            merged[-1] = Segment(
+                id=prev.id,
+                start=prev.start,
+                end=max(prev.end, seg.end),
+                text=prev.text,
+            )
+            continue
+
+        # Current starts with previous (rolling expansion)
+        if curr_norm.startswith(prev_norm):
+            merged[-1] = Segment(
+                id=prev.id,
+                start=prev.start,
+                end=max(prev.end, seg.end),
+                text=seg.text,
+            )
+            continue
+
+        # Previous contains current
+        if curr_norm in prev_norm:
+            merged[-1] = Segment(
+                id=prev.id,
+                start=prev.start,
+                end=max(prev.end, seg.end),
+                text=prev.text,
+            )
+            continue
+
+        # Current contains previous
+        if prev_norm in curr_norm:
+            merged[-1] = Segment(
+                id=prev.id,
+                start=prev.start,
+                end=max(prev.end, seg.end),
+                text=seg.text,
+            )
+            continue
+
+        # Word-level suffix/prefix overlap (e.g. "Apple has finally" + "finally unveiled their long")
+        prev_words = prev.text.split()
+        curr_words = seg.text.split()
+        overlap_found = False
+        for k in range(min(len(prev_words), len(curr_words)), 0, -1):
+            if [w.lower() for w in prev_words[-k:]] == [w.lower() for w in curr_words[:k]]:
+                combined_text = " ".join(prev_words + curr_words[k:])
+                merged[-1] = Segment(
+                    id=prev.id,
+                    start=prev.start,
+                    end=max(prev.end, seg.end),
+                    text=combined_text,
+                )
+                overlap_found = True
+                break
+
+        if not overlap_found:
+            merged.append(seg)
+
+    # Step 3: Merge short sentence fragments (segments ending without punctuation and short)
+    final_segments: List[Segment] = []
+    for s in merged:
+        if not final_segments:
+            final_segments.append(s)
+            continue
+
+        last = final_segments[-1]
+        last_ends_sentence = last.text.endswith((".", "!", "?"))
+        word_count = len(last.text.split())
+
+        # If previous segment is very short or doesn't end with a sentence stop, and close in time (< 1.5s gap)
+        if (not last_ends_sentence or word_count < 4) and (s.start - last.end <= 1.5) and (len(last.text.split()) + len(s.text.split()) < 30):
+            final_segments[-1] = Segment(
+                id=last.id,
+                start=last.start,
+                end=max(last.end, s.end),
+                text=f"{last.text} {s.text}",
+            )
+        else:
+            final_segments.append(s)
+
+    # Re-index ids
+    return [
+        Segment(id=idx, start=seg.start, end=seg.end, text=seg.text)
+        for idx, seg in enumerate(final_segments)
+    ]
 
 
 
