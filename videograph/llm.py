@@ -21,9 +21,15 @@ CACHE_DIR = Path.home() / ".videograph_cache" / "llm"
 
 
 def get_api_key() -> str:
-    """Read API key from environment variables only."""
+    """Read API key from environment variables or .env file."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:
+        pass
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     return key.strip() if key else ""
+
 
 
 def compute_cache_key(prompt: str, model: str) -> str:
@@ -94,7 +100,8 @@ def call_llm_raw(prompt: str, model: str = "gemma-4-it") -> str:
         
         # Primary requested model is Gemma 4 / Gemini
         # If gemma-4 is requested, use gemma-4 or gemini fallback if not allowed on endpoint
-        models_to_try = [model, "gemini-2.5-flash", "gemini-1.5-flash"]
+        models_to_try = [model, "gemini-3.5-flash-lite", "gemini-3.5-flash"]
+
         last_error = None
 
         for m in models_to_try:
