@@ -1066,3 +1066,12 @@ body.dark-theme {
 .hero-content { max-width: 760px; }
 .hero-content h1 { text-wrap: balance; }
 .hero-subtitle { text-wrap: balance; }
+
+/* seekwise wordmark */
+.nav-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.logo-mark { width: 26px; height: 26px; color: var(--text); transition: transform var(--transition); }
+.logo-play { fill: var(--sig-green, #22C55E); }
+.nav-brand:hover .logo-mark { transform: rotate(-8deg) scale(1.05); }
+.wordmark { font-size: 20px; line-height: 1; letter-spacing: -0.045em; }
+.wordmark-seek { font-weight: 700; }
+.wordmark-wise { font-weight: 300; color: var(--muted); }
