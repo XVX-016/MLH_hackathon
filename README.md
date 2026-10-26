@@ -46,14 +46,14 @@ Open <http://localhost:8000> and click **Try the demo**. The demo is precomputed
 1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY=...`. The app loads `.env` on startup. This also turns on Q&A.
 3. Run `python run.py`, then either:
-   - **Upload a file:** MP4, MKV, WebM, MP3 or WAV, up to 100 MB and 10 minutes long. Uploading a **VTT or SRT** subtitle file instead skips transcription, which makes it the fastest and most reliable option.
-   - **Paste a YouTube link:** this works when the machine can reach YouTube. See [Limitations](#limitations).
+   - **Upload a file:** MP4, MKV, WebM, MP3 or WAV, up to 100 MB and 15 minutes long. Uploading a **VTT or SRT** subtitle file instead skips transcription, which makes it the fastest and most reliable option.
+   - **Paste a YouTube link:** seekwise reads the video's captions (first with youtube-transcript-api, then with yt-dlp). It does not download the video. If the video has no captions, or is private or age-restricted, the app asks you to upload the file instead.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A[Video file, subtitles,<br>or YouTube link] --> B[Transcribe<br>Gemini, or read VTT/SRT]
+    A[Video file, subtitles,<br>or YouTube link] --> B[Get the transcript<br>captions, VTT/SRT, or Gemini]
     B --> C[Split into overlapping<br>60s chunks]
     C --> D[LLM extraction<br>chapters, summary, flashcards]
     C --> E[Entities and relationships<br>NetworkX graph]
@@ -89,7 +89,7 @@ Licenses below are taken from each package's installed metadata.
 | NetworkX | Knowledge graph | BSD-3-Clause |
 | RapidFuzz | Quote verification | MIT |
 | sentence-transformers · faiss-cpu | Semantic search for Q&A | Apache-2.0 · MIT |
-| yt-dlp | YouTube metadata and audio | Unlicense |
+| youtube-transcript-api · yt-dlp | YouTube captions and metadata | MIT · Unlicense |
 | imageio-ffmpeg | Bundled ffmpeg for audio conversion | BSD-2-Clause (wrapper) |
 | vis-network (browser) | Graph rendering | Apache-2.0 or MIT |
 
@@ -97,9 +97,9 @@ All of these allow use in an MIT project. One thing to note: imageio-ffmpeg down
 
 ## Limitations
 
-- **Length:** videos over 10 minutes and uploads over 100 MB are rejected.
+- **Length:** videos over 15 minutes and uploads over 100 MB are rejected.
 - **Language:** tested on English. YouTube subtitle download defaults to English.
-- **YouTube on servers:** YouTube often blocks downloads from cloud hosts. On a deployed server, upload the file or its subtitles instead.
+- **YouTube:** only videos with captions work from a link. YouTube also often blocks requests from cloud hosts. In both cases, upload the file or its subtitles instead.
 - **LLM errors:** some Gemini models are not available to new API keys, and busy models return 503 errors. The app retries, then falls back to other models. If all of them fail, the job fails with the error message.
 - **Memory only:** results live in server memory, so links to your own videos stop working after a restart. The demo link always works.
 
