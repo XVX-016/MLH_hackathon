@@ -178,3 +178,28 @@ def test_download_youtube_audio_rejects_long_video(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="exceeds maximum"):
         download_youtube_audio("https://www.youtube.com/watch?v=toolong", output_dir="/tmp")
+
+
+def test_parse_vtt_with_bom_and_accents() -> None:
+    from videograph.transcribe import parse_vtt_or_srt
+
+    # Subtitle with UTF-8 BOM (\ufeff), CRLF (\r\n), styling tags, and French/Spanish accents
+    sample_content = (
+        "\ufeffWEBVTT\r\n\r\n"
+        "1\r\n"
+        "00:00:01.000 --> 00:00:04.500\r\n"
+        "Bonjour! <c.highlight>C'est un modèle d'attention très sophistiqué.</c>\r\n\r\n"
+        "2\r\n"
+        "00:00:05,250 --> 00:00:09,750\r\n"
+        "El procesamiento del <i>lenguaje natural</i> es increíble.\r\n"
+    )
+
+    segments = parse_vtt_or_srt(sample_content)
+    assert len(segments) == 2
+    assert segments[0].start == 1.0
+    assert segments[0].end == 4.5
+    assert segments[0].text == "Bonjour! C'est un modèle d'attention très sophistiqué."
+    assert segments[1].start == 5.25
+    assert segments[1].end == 9.75
+    assert segments[1].text == "El procesamiento del lenguaje natural es increíble."
+
