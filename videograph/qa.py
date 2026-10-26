@@ -37,32 +37,55 @@ class TranscriptRetriever:
         self.embedder = embedder or get_embed_model()
         self.index = None
         if self.segments and self.embedder is not None:
-            self._build_index()
+            try:
+                self._build_index()
+            except Exception:
+                self.index = None
 
     def _build_index(self) -> None:
-        import faiss
-
-        embeddings = self.embedder.encode(
-            [segment.text for segment in self.segments],
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-        ).astype(np.float32)
-        self.index = faiss.IndexFlatIP(embeddings.shape[1])
-        self.index.add(embeddings)
+        try:
+            import faiss
+            embeddings = self.embedder.encode(
+                [segment.text for segment in self.segments],
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+            ).astype(np.float32)
+            self.index = faiss.IndexFlatIP(embeddings.shape[1])
+            self.index.add(embeddings)
+        except Exception:
+            self.index = None
 
     def retrieve(self, question: str, top_k: int = 5) -> List[Tuple[TranscriptSegment, float]]:
-        """Return the highest-scoring chunks and cosine similarities."""
-        if self.index is None or self.embedder is None:
+        """Return the highest-scoring chunks and similarities (FAISS if available, else RapidFuzz)."""
+        if not self.segments:
             return []
-        query = self.embedder.encode(
-            [question], convert_to_numpy=True, normalize_embeddings=True
-        ).astype(np.float32)
-        scores, indices = self.index.search(query, min(top_k, len(self.segments)))
-        return [
-            (self.segments[index], float(score))
-            for score, index in zip(scores[0], indices[0])
-            if 0 <= index < len(self.segments)
-        ]
+
+        if self.index is not None and self.embedder is not None:
+            try:
+                query = self.embedder.encode(
+                    [question], convert_to_numpy=True, normalize_embeddings=True
+                ).astype(np.float32)
+                scores, indices = self.index.search(query, min(top_k, len(self.segments)))
+                return [
+                    (self.segments[index], float(score))
+                    for score, index in zip(scores[0], indices[0])
+                    if 0 <= index < len(self.segments)
+                ]
+            except Exception:
+                pass
+
+        # Lightweight rapidfuzz fallback (no torch/faiss needed)
+        from rapidfuzz import fuzz
+        scored = []
+        for segment in self.segments:
+            # Weighted mix of token_set_ratio (handles reordering) and partial_ratio
+            score_set = fuzz.token_set_ratio(question, segment.text) / 100.0
+            score_partial = fuzz.partial_ratio(question, segment.text) / 100.0
+            score = max(score_set, score_partial)
+            scored.append((segment, float(score)))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
 
 
 def _timestamp(seconds: float) -> str:
