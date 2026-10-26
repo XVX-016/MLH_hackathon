@@ -10,16 +10,31 @@
 3. **Evidence-Grounded Knowledge Graph** (where **EVERY single edge** carries an exact quote, `[MM:SS]` start/end timestamps, and verification confidence)
 4. **Grounded Q&A Engine** with `[MM:SS]` citations rigorously verified against the transcript via RapidFuzz + FAISS semantic retrieval.
 
-## Team workflow
+## Team workflow & Agent Division
 
-This Hacktoberfest build uses a protected three-member workflow: **Hardik** owns
-integration and the public contract, **Tanmmay** owns media intelligence, and
-**Faariz** owns the evidence explorer. Every coding agent must first receive an
-exact name confirmation from one of those members and may edit only that owner's
-paths. The complete build order, handoff format, and acceptance criteria are in
-[docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md); the machine-checkable ownership
-map and local gate are in `team/ownership.json` and
-`tools/verify_ownership.py`.
+This Hacktoberfest build is divided among three human owners with scoped coding agent workflows:
+
+- **Hardik** *(Lead & Integration)*: Owns the API contracts (`videograph/schemas.py`), FastAPI integration (`app/main.py`), CLI (`videograph/cli.py`), Docker/deployment, offline demo pipeline, and repo integrity checks.
+- **Tanmmay** *(Media Intelligence)*: Owns ingestion (`yt-dlp`), audio extraction (`ffmpeg`), VTT/SRT parsing, chunking, and structured LLM extraction for chapters & takeaways.
+- **Faariz** *(Evidence Explorer & Heavy Agentic Lane — Codex / Claude)*: Takes on the heavy reasoning and algorithmic workloads:
+  - **Entity Resolution & Knowledge Graph** (`videograph/resolve.py`, `videograph/graph.py`): Entity clustering, deduplication, and NetworkX / Vis.js network serialization.
+  - **Evidence Grounding Engine** (`videograph/grounding.py`): RapidFuzz + N-gram fuzzy quote alignment, timestamp boundary verification, and confidence scoring.
+  - **Semantic Retrieval & Grounded Q&A** (`videograph/qa.py`): Dense vector retrieval (FAISS), hybrid search, and citation verification.
+  - **Interactive Dashboard UI** (`app/static/**`): Vis-network graph rendering, synchronized transcript scrubber, and timestamp-seeking UX.
+  - **Evaluation & Benchmarking** (`eval/**`): Automated citation precision, recall, and hallucination scoring against ground-truth datasets.
+
+### Mandatory Agent Start Gate
+
+Before any coding agent generates or edits code, the human operator must send the exact confirmation phrase in the conversation:
+- `I am Hardik.`
+- `I am Tanmmay.`
+- `I am Faariz.`
+
+Agents must strictly operate within their assigned file paths defined in [`team/ownership.json`](team/ownership.json). Before submitting a PR or handoff, verify ownership with:
+```powershell
+python tools/verify_ownership.py --member <Hardik|Tanmmay|Faariz> --base HEAD
+```
+For detailed handoff contracts and sequence, see [docs/TEAM_WORKFLOW.md](docs/TEAM_WORKFLOW.md).
 
 ---
 
@@ -54,22 +69,49 @@ MLH_hackathon/
 
 ## Quickstart
 
-### 1. Set Your Environment Key
+### 1. Set Your Environment Key (Optional for Demo)
 ```bash
 export GEMINI_API_KEY="your-gemini-api-key"
 ```
+*(Note: Not required for the offline demo. The built-in demo runs with zero external API calls or keys.)*
 
-### 2. Run the Web Application
+### 2. Run the Application
+Launch the server with the console-guided startup script:
 ```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python run.py
 ```
-Navigate to `http://localhost:8000` to interact with the dashboard, load the built-in demo sample, or submit any video/audio/subtitles!
+This startup script automatically:
+- Checks environment requirements and key configurations.
+- Displays the exact port (`http://localhost:8000`) and interactive Swagger docs URL (`/docs`).
+- Outlines immediate actions (loading the offline demo, testing uploads, running verified Q&A).
+- Supports flags: `python run.py --host 0.0.0.0 --port 8000 --reload`.
 
-The **Load Demo Sample** button works offline and demonstrates the complete
-evidence path: chapters, transcript, grounded graph edges, and timestamp-linked
-answers. Real uploads support MP4, MKV, WebM, MP3, WAV, VTT, and SRT files up
-to 100 MB. URL ingestion is intentionally not enabled in this build; download
-media you are authorized to analyze or upload its subtitles instead.
+Alternatively, run directly via Uvicorn:
+```bash
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Navigate to `http://localhost:8000` to interact with the dashboard:
+- The **Load Demo Sample** button works offline and demonstrates the complete evidence path: chapters, transcript, grounded graph edges, and timestamp-linked answers.
+- Real uploads support MP4, MKV, WebM, MP3, WAV, VTT, and SRT files up to 100 MB. URL ingestion will be enabled once Tanmmay's lane delivers the media download pipeline.
+
+---
+
+## Agent Skills & Team Capabilities
+
+VideoGraph integrates with developer agent skills and protocols to accelerate hackathon delivery:
+
+- **Launch & Startup Assistant**: `python run.py` provides immediate status, port inspection, and quick-start checklists for agents and human operators.
+- **Ownership Verification Skill / Tool**: `python tools/verify_ownership.py --member <Name> --base HEAD` enforces strict file boundaries and prevents cross-member merge conflicts.
+- **Sponsor & Cloud Agent Skills**:
+  - `devrelay-sponsor-skills`: Official skills for integrating sponsor services (e.g. DigitalOcean App Platform, Gemini inference).
+  - `devrelay-challenges`: Querying event criteria, deadlines, and prize rubrics.
+  - `devrelay-offers`: Managing hackathon credits and sponsor tooling perks.
+  - `devrelay-mlh-submissions`: Managing project submissions, demos, and challenge entries.
+- **Multi-Agent Lane Delegation**:
+  - **Hardik**: Public contract enforcement, FastAPI integration, startup tooling, and repo governance.
+  - **Tanmmay**: Audio/video ingestion, media normalizers, and LLM chapter extraction.
+  - **Faariz (Codex / Claude Heavy Agentic Lane)**: High-capacity multi-agent execution for entity clustering, NetworkX/Vis.js graph topology, RapidFuzz quote verification, FAISS semantic search, and evaluation suites.
 
 ### 3. Run via CLI
 ```bash
