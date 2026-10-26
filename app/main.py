@@ -7,9 +7,15 @@ load_dotenv()  # Load .env before any module reads os.environ
 
 from contextlib import asynccontextmanager
 import logging
+import sys
 import uuid
 from pathlib import Path
 from typing import Any, Dict
+
+# Ensure project root is on sys.path so videograph/ and app/ packages resolve
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -120,11 +126,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-# Temporary: log registered routes at startup so they appear in Vercel function logs
-import sys as _sys
-_routes = [f"  {r.methods} {r.path}" for r in app.routes if hasattr(r, "path") and hasattr(r, "methods")]
-print(f"[seekwise] registered {len(_routes)} routes:\n" + "\n".join(_routes), file=_sys.stderr)
 
 
 
@@ -294,12 +295,14 @@ def _process_youtube_url(job_id: str, url: str, model: str) -> None:
 
 
 
+@app.get("/api/index", response_class=HTMLResponse)
 @app.get("/", response_class=HTMLResponse)
 def serve_index() -> HTMLResponse:
     index = STATIC_DIR / "index.html"
     return HTMLResponse(index.read_text(encoding="utf-8")) if index.exists() else HTMLResponse("<h1>seekwise</h1>")
 
 
+@app.get("/api/index/health")
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok", "app": "seekwise"}
@@ -446,3 +449,9 @@ async def dashboard_url(
         raise HTTPException(status_code=422, detail="Missing required 'url' parameter")
     req = UrlProcessRequest(url=url, model=model)
     return await process_url(background_tasks, req)
+
+
+# Log all registered routes after module is fully assembled
+_routes = [f"  {r.methods} {r.path}" for r in app.routes if hasattr(r, "path") and hasattr(r, "methods")]
+print(f"[seekwise] ready with {len(_routes)} routes:\n" + "\n".join(_routes), file=sys.stderr)
+

@@ -1,16 +1,10 @@
 {
   "functions": {
-    "api/index.py": {
+    "app/main.py": {
       "maxDuration": 60,
       "includeFiles": "app/static/**,data/demo/**"
     }
   },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index"
-    }
-  ],
   "env": {
     "PYTHONPATH": "/var/task"
   }
