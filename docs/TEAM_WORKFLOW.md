@@ -21,17 +21,11 @@ interactive, evidence-grounded study companion:
 4. **Verified Q&A**: Users can query the transcript at any time and receive answers
    strictly grounded with clickable `[MM:SS]` timestamp citations.
 
-## Non-negotiable agent launch protocol
-
-No coding agent may begin until the human operator answers with their exact
-member name: `Hardik`, `Tanmmay`, or `Faariz`. The agent then replies:
-
-> Confirmed: I am working for **<name>**. I will change only **<owned paths>**
-> and will hand off all other work.
-
-The agent must read `AGENTS.md`, run the ownership check before handoff, and
-stop on an out-of-scope request. A named person can delegate execution to an
-agent, but the owner remains accountable for review and handoff.
+## Open collaboration protocol
+ 
+Team members and coding agents may begin work immediately on any part of the project
+without needing identity confirmation (`I am [name]`) or path restrictions. All
+members collaborate freely across the repository to ship features quickly.
 
 ## Work lanes
 

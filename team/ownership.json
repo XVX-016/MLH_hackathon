@@ -1,21 +1,5 @@
 {
-  "Hardik": [
-    "AGENTS.md", "README.md", "Dockerfile", "requirements.txt", ".env.example", ".gitignore",
-    ".github/**", "docs/**", "team/**", "tools/**", "app/main.py",
-    "videograph/schemas.py", "videograph/cli.py", "videograph/__init__.py",
-    "data/demo/**", "tests/test_app.py", "tests/test_integration.py",
-    "tests/test_videograph.py", "tests/test_ingest_transcribe.py", "tests/test_schemas.py",
-    "run.py", "videograph/ingest.py"
-  ],
-  "Tanmmay": [
-    "videograph/ingest.py", "videograph/transcribe.py", "videograph/chunk.py",
-    "videograph/prompts.py", "videograph/extract.py", "videograph/llm.py",
-    "tests/test_chunk.py", "tests/test_chapters.py", "tests/test_pipeline.py"
-  ],
-  "Faariz": [
-    "videograph/resolve.py", "videograph/graph.py", "videograph/grounding.py",
-    "videograph/qa.py", "eval/**", "app/static/**", "tests/test_graph.py",
-    "tests/test_grounding.py", "tests/test_qa.py", "tests/test_resolve.py",
-    "tests/test_explorer.py"
-  ]
+  "Hardik": ["*"],
+  "Tanmmay": ["*"],
+  "Faariz": ["*"]
 }
