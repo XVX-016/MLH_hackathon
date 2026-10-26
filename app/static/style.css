@@ -1117,3 +1117,26 @@ body.dark-theme {
 .wordmark-i { position: relative; }
 .wordmark-i::before { content: ""; position: absolute; left: 50%; top: 0.19em; width: 0.19em; height: 0.19em; transform: translateX(-50%); border-radius: 50%; background: var(--sig-green); }
 .nav-brand:hover .wordmark-seek::after { background: linear-gradient(90deg, var(--sig-green) 0 100%, transparent 100%); }
+
+/* The brief: framed conclusion on the Summary page */
+.brief-card { display: flex; flex-direction: column; gap: 16px; }
+.brief-glance { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--border); }
+.brief-glance > div { background: var(--surface-2); padding: 10px 12px; min-width: 0; }
+.brief-glance dt { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.brief-glance dd { margin: 0; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.brief-glance .is-strong dd { color: #6EE7A0; }
+.brief-glance .is-mixed dd { color: #FCD34D; }
+.brief-glance .is-weak dd { color: #FCA5A5; }
+.brief-headline { font-size: 19px; line-height: 1.4; font-weight: 600; letter-spacing: -0.015em; max-width: 62ch; text-wrap: pretty; }
+.brief-card .summary-text { color: #C7C7C7; max-width: 70ch; }
+.brief-block h4 { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 8px; }
+.brief-concepts { display: flex; flex-wrap: wrap; gap: 8px; }
+.concept-chip { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, 0.03); color: var(--text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: border-color var(--transition), background-color var(--transition); }
+.concept-chip small { font-size: 11px; color: var(--muted); font-weight: 400; }
+.concept-chip:hover { border-color: rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.07); }
+.brief-takeaways { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; counter-reset: takeaway; }
+.brief-takeaways li { counter-increment: takeaway; display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; line-height: 1.5; }
+.brief-takeaways li:first-child { border-top: 0; }
+.brief-takeaways li::before { content: counter(takeaway, decimal-leading-zero); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; color: var(--muted); }
+.brief-takeaways .citation-pill { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; padding: 2px 8px; }
+@media (max-width: 560px) { .brief-glance { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=12">
+  <link rel="stylesheet" href="/static/style.css?v=13">
 </head>
 <body class="dark-theme">
   <header class="navbar">
@@ -65,7 +65,13 @@
     </div>
 
     <section id="panel-summary" class="study-panel summary-grid" role="tabpanel" aria-labelledby="tab-summary">
-      <div class="card glassmorphism"><div class="card-header"><h3>Executive Summary</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy summary</button></div><p id="video-summary" class="summary-text">No summary loaded yet.</p></div>
+      <div class="card glassmorphism brief-card"><div class="card-header"><h3>The brief</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy brief</button></div>
+        <dl id="brief-glance" class="brief-glance"></dl>
+        <p id="brief-headline" class="brief-headline"></p>
+        <p id="video-summary" class="summary-text">No summary loaded yet.</p>
+        <div id="brief-concepts-block" class="brief-block" hidden><h4>Core concepts</h4><div id="brief-concepts" class="brief-concepts"></div></div>
+        <div id="brief-takeaways-block" class="brief-block" hidden><h4>What to remember</h4><ol id="brief-takeaways" class="brief-takeaways"></ol></div>
+      </div>
       <div class="card glassmorphism"><div class="card-header"><h3>Video Chapters</h3><span class="badge" id="chapters-count">0 Chapters</span></div><div id="chapters-list" class="chapters-container"><p class="placeholder-text">Chapters will appear here after processing.</p></div></div>
     </section>
 
@@ -88,6 +94,6 @@
     </div>
     </div>
   </main>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>
