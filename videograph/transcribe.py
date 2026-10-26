@@ -34,17 +34,30 @@ def parse_timestamp_to_seconds(ts: str) -> float:
     return float(parts[0])
 
 
+import unicodedata
+
 def parse_vtt_or_srt(file_content: str) -> List[Segment]:
     """Parse WebVTT or SubRip (SRT) format text into timed Segments.
+
+    Handles UTF-8 BOM, CRLF/LF linebreaks, cue numbers, HTML/VTT style tags,
+    and Unicode normalization for accents.
 
     Raises:
         ValueError: If file_content is empty or contains no valid subtitle cues.
     """
-    if not file_content or not file_content.strip():
+    if not file_content:
         raise ValueError("Subtitle file content is empty.")
 
+    # Strip UTF-8 Byte Order Mark (BOM) if present
+    content = file_content.lstrip("\ufeff").strip()
+    if not content:
+        raise ValueError("Subtitle file content is empty.")
+
+    # Normalize unicode (NFC form) for consistent accents and symbols
+    content = unicodedata.normalize("NFC", content)
+
     segments: List[Segment] = []
-    lines = file_content.splitlines()
+    lines = content.splitlines()
 
     time_pattern = re.compile(
         r"((?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{2,3})\s*-->\s*((?:\d{1,2}:)?\d{2}:\d{2}[\.,]\d{2,3})"
@@ -59,6 +72,7 @@ def parse_vtt_or_srt(file_content: str) -> List[Segment]:
         nonlocal seg_id, current_start, current_end, current_text_lines
         if current_start is not None and current_end is not None and current_text_lines:
             text = " ".join(t.strip() for t in current_text_lines if t.strip())
+            # Clean HTML/VTT formatting tags e.g. <c>, <i>, <b>, <v Speaker>
             cleaned = re.sub(r"<[^>]+>", "", text).strip()
             if cleaned:
                 segments.append(
@@ -74,25 +88,30 @@ def parse_vtt_or_srt(file_content: str) -> List[Segment]:
         current_end = None
         current_text_lines = []
 
-    for line in lines:
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("WEBVTT") or line.startswith("NOTE"):
+            flush_current()
+            continue
+
         match = time_pattern.search(line)
         if match:
             flush_current()
             current_start = parse_timestamp_to_seconds(match.group(1))
             current_end = parse_timestamp_to_seconds(match.group(2))
         elif current_start is not None:
-            stripped = line.strip()
-            if stripped.isdigit() and len(current_text_lines) == 0:
+            if line.isdigit() and len(current_text_lines) == 0:
                 continue
-            if stripped:
-                current_text_lines.append(stripped)
-            else:
-                flush_current()
+            current_text_lines.append(line)
+        else:
+            continue
 
     flush_current()
     if not segments:
         raise ValueError("Malformed subtitle format: no valid timestamped cues found.")
     return segments
+
+
 
 
 
@@ -209,9 +228,19 @@ def _transcribe_api(path: str) -> List[Segment]:
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
 
-    data = json.loads(response.text or "{}")
+    text_content = (response.text or "{}").strip()
+    if text_content.startswith("```"):
+        text_content = re.sub(r"^```(?:json)?\s*", "", text_content)
+        text_content = re.sub(r"\s*```$", "", text_content).strip()
+
+    try:
+        data = json.loads(text_content)
+    except json.JSONDecodeError:
+        data = {}
+
     raw_segments = data.get("segments", [])
     return [Segment.model_validate(s) for s in raw_segments]
+
 
 
 def transcribe(path: str) -> List[Segment]:
