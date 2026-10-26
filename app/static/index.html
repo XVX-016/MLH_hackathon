@@ -4,17 +4,19 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>videograph - evidence-grounded video Q&amp;A</title>
+  <title>seekwise - find the moments that matter</title>
+  <meta name="description" content="seekwise turns any video into a verified summary, study flashcards, and an evidence graph.">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=13">
 </head>
 <body class="dark-theme">
   <header class="navbar">
-    <div class="nav-brand"><div class="logo-icon">VG</div><div class="brand-text"><span class="brand-title">videograph</span><span class="brand-badge">evidence-grounded</span></div></div>
-    <button id="btn-new-video" class="btn btn-secondary" type="button" hidden>New video</button>
+    <a class="nav-brand" href="#/" aria-label="seekwise home"><span class="wordmark" aria-hidden="true"><span class="wordmark-seek">seek</span><span class="wordmark-wise">w<span class="wordmark-i">ı</span>se</span></span></a>
+    <div class="nav-actions"><button id="btn-copy-link" class="btn btn-quiet" type="button" hidden>Copy link</button><button id="btn-new-video" class="btn btn-secondary" type="button" hidden>New video</button></div>
   </header>
   <main class="app-layout">
     <section id="hero" class="hero" aria-labelledby="input-title">
@@ -63,7 +65,13 @@
     </div>
 
     <section id="panel-summary" class="study-panel summary-grid" role="tabpanel" aria-labelledby="tab-summary">
-      <div class="card glassmorphism"><div class="card-header"><h3>Executive Summary</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy summary</button></div><p id="video-summary" class="summary-text">No summary loaded yet.</p></div>
+      <div class="card glassmorphism brief-card"><div class="card-header"><h3>The brief</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy brief</button></div>
+        <dl id="brief-glance" class="brief-glance"></dl>
+        <p id="brief-headline" class="brief-headline"></p>
+        <p id="video-summary" class="summary-text">No summary loaded yet.</p>
+        <div id="brief-concepts-block" class="brief-block" hidden><h4>Core concepts</h4><div id="brief-concepts" class="brief-concepts"></div></div>
+        <div id="brief-takeaways-block" class="brief-block" hidden><h4>What to remember</h4><ol id="brief-takeaways" class="brief-takeaways"></ol></div>
+      </div>
       <div class="card glassmorphism"><div class="card-header"><h3>Video Chapters</h3><span class="badge" id="chapters-count">0 Chapters</span></div><div id="chapters-list" class="chapters-container"><p class="placeholder-text">Chapters will appear here after processing.</p></div></div>
     </section>
 
@@ -82,10 +90,10 @@
 
     <div class="explore-grid">
       <section class="card glassmorphism transcript-card" aria-labelledby="transcript-title"><div class="card-header"><h3 id="transcript-title">Timestamped Transcript</h3><label class="visually-hidden" for="transcript-search">Search transcript</label><input type="search" id="transcript-search" class="search-input" placeholder="Search transcript..."></div><div id="transcript-list" class="transcript-scroll-area"><p class="placeholder-text">Transcript segments will appear here.</p></div></section>
-      <section class="card glassmorphism qa-card" aria-labelledby="qa-title"><div class="card-header"><h3 id="qa-title">Grounded Q&amp;A</h3><span class="badge badge-accent">Verified citations</span></div><p class="qa-subtitle">Answers link to supporting transcript moments.</p><div id="qa-chat-history" class="qa-history" aria-live="polite"><div class="qa-message system-message">Load a demo or process a video to ask a question.</div></div><form id="qa-form" class="qa-input-bar"><label class="visually-hidden" for="qa-input">Question about the video</label><input type="text" id="qa-input" placeholder="Ask a question about the video..." required><button type="submit" id="btn-ask-qa" class="btn btn-primary">Ask <span class="spinner hidden" id="spinner-qa"></span></button></form></section>
+      <section class="card glassmorphism qa-card" aria-labelledby="qa-title"><div class="card-header"><h3 id="qa-title">Grounded Q&amp;A</h3><span class="badge badge-accent">Verified citations</span></div><p class="qa-subtitle">Answers link to supporting transcript moments.</p><div id="qa-chat-history" class="qa-history" aria-live="polite"><div class="qa-message system-message">Load a demo or process a video to ask a question.</div></div><form id="qa-form" class="qa-input-bar"><label class="visually-hidden" for="qa-input">Question about the video</label><input type="text" id="qa-input" placeholder="Ask a question about the video...  ( / )" required><button type="submit" id="btn-ask-qa" class="btn btn-primary">Ask <span class="spinner hidden" id="spinner-qa"></span></button></form></section>
     </div>
     </div>
   </main>
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=14"></script>
 </body>
 </html>
