@@ -10,6 +10,9 @@ import argparse
 import os
 import sys
 
+from dotenv import load_dotenv
+load_dotenv()  # Load .env so GEMINI_API_KEY is available for banner + server
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
