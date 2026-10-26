@@ -6,26 +6,124 @@ Extracts:
 """
 
 from __future__ import annotations
+import asyncio
+import hashlib
+import json
 import logging
-from typing import Callable, List, Optional, Sequence, Tuple
-from pydantic import BaseModel, Field
+from pathlib import Path
+from typing import Callable, List, Optional, Protocol, Sequence, Tuple
+from pydantic import BaseModel, Field, ValidationError
 
 from videograph.schemas import (
     TranscriptSegment,
     VideoChapter,
     Chapter,
     Entity,
+    ChunkExtraction,
     KnowledgeNode,
     KnowledgeEdge,
     KnowledgeGraph,
 )
 from videograph.chunk import TranscriptChunk, chunk_transcript
-from videograph.prompts import CHAPTERS_PROMPT, SUMMARY_PROMPT, EXTRACT_GRAPH_PROMPT
-from videograph.llm import call_llm_json
+from videograph.prompts import CHAPTERS_PROMPT, SUMMARY_PROMPT, EXTRACTION_PROMPT, EXTRACT_GRAPH_PROMPT
+from videograph.llm import call_llm_json, call_llm_raw
 from videograph.grounding import verify_knowledge_edge
 from videograph.graph import build_networkx_graph
 
 logger = logging.getLogger(__name__)
+EXTRACTION_CACHE_DIR = Path.home() / ".videograph_cache" / "extractions"
+
+
+class ExtractionClient(Protocol):
+    """Small async interface that permits deterministic extraction tests."""
+
+    async def complete(self, prompt: str, model: str) -> str:
+        """Return the raw JSON response for an extraction prompt."""
+        ...
+
+
+class GeminiExtractionClient:
+    """Adapter around the existing cached Gemini raw-call client."""
+
+    async def complete(self, prompt: str, model: str) -> str:
+        return await asyncio.to_thread(call_llm_raw, prompt, model)
+
+
+def chunk_content_hash(chunk: TranscriptChunk, model: str) -> str:
+    """Stable cache key for a chunk's transcript content and selected model."""
+    content = json.dumps(
+        {"model": model, "start": chunk.start, "end": chunk.end, "text": chunk.formatted_text},
+        sort_keys=True,
+    )
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _parse_extraction_json(raw_text: str) -> ChunkExtraction:
+    stripped = raw_text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+        if stripped.endswith("```"):
+            stripped = stripped[:-3]
+    return ChunkExtraction.model_validate(json.loads(stripped.strip()))
+
+
+def _cache_path(chunk: TranscriptChunk, model: str, cache_dir: Path) -> Path:
+    return cache_dir / f"{chunk_content_hash(chunk, model)}.json"
+
+
+async def extract_chunk(
+    chunk: TranscriptChunk,
+    client: ExtractionClient,
+    model: str = "gemma-4-it",
+    cache_dir: Path = EXTRACTION_CACHE_DIR,
+) -> Optional[ChunkExtraction]:
+    """Extract one chunk, retrying exactly once for malformed/invalid JSON."""
+    path = _cache_path(chunk, model, cache_dir)
+    if path.exists():
+        try:
+            return _parse_extraction_json(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            logger.warning("Ignoring invalid extraction cache for chunk %s", chunk.chunk_id)
+
+    prompt = EXTRACTION_PROMPT.format(
+        chunk_start=chunk.start,
+        chunk_end=chunk.end,
+        chunk_text=chunk.formatted_text,
+    )
+    current_prompt = prompt
+    for attempt in range(2):
+        try:
+            extraction = _parse_extraction_json(await client.complete(current_prompt, model))
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(extraction.model_dump_json(), encoding="utf-8")
+            return extraction
+        except (json.JSONDecodeError, ValidationError, ValueError) as error:
+            if attempt == 0:
+                current_prompt = (
+                    f"{prompt}\n\nPrevious response validation error:\n{error}\n"
+                    "Return only JSON that satisfies the requested schema."
+                )
+            else:
+                logger.warning("Skipping chunk %s after invalid extraction: %s", chunk.chunk_id, error)
+    return None
+
+
+async def extract_chunks(
+    chunks: Sequence[TranscriptChunk],
+    client: Optional[ExtractionClient] = None,
+    model: str = "gemma-4-it",
+    cache_dir: Path = EXTRACTION_CACHE_DIR,
+) -> List[ChunkExtraction]:
+    """Extract all chunks concurrently, with at most four active LLM calls."""
+    extraction_client = client or GeminiExtractionClient()
+    semaphore = asyncio.Semaphore(4)
+
+    async def guarded(chunk: TranscriptChunk) -> Optional[ChunkExtraction]:
+        async with semaphore:
+            return await extract_chunk(chunk, extraction_client, model=model, cache_dir=cache_dir)
+
+    results = await asyncio.gather(*(guarded(chunk) for chunk in chunks))
+    return [result for result in results if result is not None]
 
 
 class ChaptersOutput(BaseModel):

@@ -85,6 +85,34 @@ Return ONLY valid JSON matching this exact structure:
 }}
 """
 
+EXTRACTION_PROMPT = """
+Extract a compact, evidence-grounded knowledge representation from this
+timestamped transcript chunk. Return only facts explicitly supported by an
+exact quote in the chunk.
+
+Chunk start: {chunk_start:.1f}
+Chunk end: {chunk_end:.1f}
+Transcript:
+{chunk_text}
+
+Return ONLY valid JSON matching this structure:
+{{
+  "entities": [
+    {{"name": "Entity name", "type": "Concept", "aliases": ["optional alias"]}}
+  ],
+  "relations": [
+    {{
+      "subject": "Entity name or alias",
+      "predicate": "USES",
+      "object": "Entity name or alias",
+      "quote": "exact transcript quote of at most 25 words",
+      "start_sec": 0.0,
+      "end_sec": 5.0
+    }}
+  ]
+}}
+"""
+
 RESOLVE_ENTITIES_PROMPT = """
 Given the following list of candidate entity labels extracted from multiple chunks of a video,
 group them into canonical clusters where duplicates, synonyms, or casing variations represent the same concept.
