@@ -26,8 +26,13 @@ Return ONLY valid JSON matching this exact structure:
 """
 
 CHAPTERS_PROMPT = """
-Create chronological video chapters from these timestamped chunk gists.
-Every `start_sec` MUST exactly equal one of the supplied chunk starts.
+Create chronological chapters for this video from the timestamped chunk gists.
+
+Rules:
+- 5 to 10 chapters (fewer only if there are fewer chunks), covering the whole video in order.
+- Every `start_sec` must equal one of the supplied chunk starts, and starts must strictly increase.
+- Titles: under 6 words, specific to what is said (no "Introduction", "Part 2", or entity lists).
+- Summary: exactly one sentence saying what this part covers, based only on the gists.
 
 Chunk gists:
 {chunk_gists}

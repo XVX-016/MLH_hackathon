@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Callable, List, Optional, Protocol, Sequence, Tuple
 from pydantic import BaseModel, Field, ValidationError
@@ -29,7 +30,6 @@ from videograph.chunk import TranscriptChunk, chunk_transcript
 from videograph.prompts import CHAPTERS_PROMPT, SUMMARY_PROMPT, EXTRACTION_PROMPT, EXTRACT_GRAPH_PROMPT, FLASHCARDS_PROMPT
 from videograph.llm import call_llm_json, call_llm_raw
 from videograph.grounding import verify_knowledge_edge
-from videograph.graph import build_networkx_graph
 
 logger = logging.getLogger(__name__)
 EXTRACTION_CACHE_DIR = Path.home() / ".videograph_cache" / "extractions"
@@ -153,45 +153,66 @@ def build_chunk_gists(
     return gists
 
 
-def _validate_chapter_starts(chapters: Sequence[Chapter], chunks: Sequence[TranscriptChunk]) -> None:
-    valid_starts = {chunk.start for chunk in chunks}
-    if not chapters or any(chapter.start_sec not in valid_starts for chapter in chapters):
-        raise ValueError("Every chapter start_sec must match a real chunk start")
+MAX_CHAPTER_TITLE_WORDS = 5  # "under 6 words"
 
 
-def _fallback_community_chapters(
+def _snap_chapter_starts(chapters: Sequence[Chapter], chunks: Sequence[TranscriptChunk]) -> List[Chapter]:
+    """Snap LLM chapter starts to the nearest real chunk start and keep them strictly increasing.
+
+    Models often return 62.0 for a chunk that starts at 61.84; rejecting the whole
+    answer for that threw away good chapters. A start further than one chunk
+    length from any real start is treated as invented and dropped.
+    """
+    starts = sorted({chunk.start for chunk in chunks})
+    if not starts:
+        raise ValueError("No chunks to anchor chapters to")
+    tolerance = max((chunk.end - chunk.start) for chunk in chunks)
+    snapped: List[Chapter] = []
+    for chapter in sorted(chapters, key=lambda item: item.start_sec):
+        nearest = min(starts, key=lambda start: abs(start - chapter.start_sec))
+        if abs(nearest - chapter.start_sec) > tolerance:
+            continue
+        if snapped and nearest <= snapped[-1].start_sec:
+            continue
+        title = " ".join(chapter.title.split()[:MAX_CHAPTER_TITLE_WORDS])
+        snapped.append(Chapter(title=title, start_sec=nearest, summary=chapter.summary.strip()))
+    if len(snapped) < min(2, len(starts)):
+        raise ValueError("Chapters must cover at least two distinct chunk starts")
+    return snapped
+
+
+def _first_sentence(text: str, limit: int = 160) -> str:
+    sentence = re.split(r"(?<=[.!?])\s+", " ".join(text.split()), maxsplit=1)[0]
+    return sentence if len(sentence) <= limit else sentence[: limit - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _fallback_time_chapters(
     chunks: Sequence[TranscriptChunk],
-    graph: Optional[KnowledgeGraph],
-    gists: Sequence[str],
+    chunk_entities: Optional[Sequence[Sequence[Entity]]] = None,
+    max_chapters: int = 6,
 ) -> List[Chapter]:
-    """Create deterministic chapters from Louvain communities when LLM output fails."""
+    """Evenly spaced, time-ordered chapters used when the LLM output is unusable."""
     if not chunks:
         return []
-    if graph is None or not graph.nodes:
-        return [
-            Chapter(title=f"Chapter {index + 1}", start_sec=chunk.start, summary=gists[index])
-            for index, chunk in enumerate(chunks)
-        ]
-
-    network = build_networkx_graph(graph)
-    grouped: dict[int, list[tuple[str, dict]]] = {}
-    for node_id, attrs in network.nodes(data=True):
-        grouped.setdefault(attrs["community"], []).append((node_id, attrs))
-
+    count = min(len(chunks), max_chapters)
+    bounds = [round(index * len(chunks) / count) for index in range(count)] + [len(chunks)]
     chapters = []
-    for community, members in grouped.items():
-        mentions = [time for _, attrs in members for time in attrs["mentions"]]
-        earliest = min(mentions) if mentions else chunks[0].start
-        start = min(chunks, key=lambda chunk: abs(chunk.start - earliest)).start
-        labels = [attrs["label"] for _, attrs in members][:3]
-        chapters.append(
-            Chapter(
-                title=" / ".join(labels),
-                start_sec=start,
-                summary=f"Community {community}: {', '.join(labels)}.",
-            )
-        )
-    return sorted(chapters, key=lambda chapter: chapter.start_sec)
+    for number in range(count):
+        group = range(bounds[number], bounds[number + 1])
+        names: List[str] = []
+        if chunk_entities:
+            for index in group:
+                if index < len(chunk_entities):
+                    names.extend(entity.name for entity in chunk_entities[index])
+        names = list(dict.fromkeys(names))[:3]
+        text = " ".join(chunks[index].text for index in group)
+        if names:
+            title = " · ".join(names)
+        else:
+            words = _first_sentence(text, limit=80).rstrip(".!?…").split()
+            title = " ".join(words[:5]) + ("…" if len(words) > 5 else "") if words else f"Part {number + 1}"
+        chapters.append(Chapter(title=title, start_sec=chunks[bounds[number]].start, summary=_first_sentence(text)))
+    return chapters
 
 
 def generate_chapters_and_summary(
@@ -201,18 +222,17 @@ def generate_chapters_and_summary(
     model: str = "gemma-4-it",
     llm_call: Callable[..., BaseModel] = call_llm_json,
 ) -> Tuple[str, List[Chapter]]:
-    """Generate validated chapters, fall back to communities, then summarize."""
+    """Generate time-ordered chapters (LLM, else evenly spaced chunk groups), then summarize."""
     if not chunks:
         return "No transcript content is available.", []
     gists = build_chunk_gists(chunks, chunk_entities)
     gist_text = "\n".join(gists)
     try:
         chapters_output = llm_call(CHAPTERS_PROMPT.format(chunk_gists=gist_text), ChaptersOutput, model=model)
-        _validate_chapter_starts(chapters_output.chapters, chunks)
-        chapters = chapters_output.chapters
-    except (ValueError, TypeError) as error:
-        logger.warning("Invalid chapter output; using community fallback: %s", error)
-        chapters = _fallback_community_chapters(chunks, graph, gists)
+        chapters = _snap_chapter_starts(chapters_output.chapters, chunks)
+    except (ValueError, TypeError, ValidationError) as error:
+        logger.warning("Invalid chapter output; using evenly spaced chapters: %s", error)
+        chapters = _fallback_time_chapters(chunks, chunk_entities)
 
     chapter_text = "\n".join(
         f"[{chapter.start_sec:.1f}s] {chapter.title}: {chapter.summary}" for chapter in chapters
