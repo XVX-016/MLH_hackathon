@@ -16,12 +16,12 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("btn-copy-summary").addEventListener("click", async function (event) {
     var button = event.currentTarget;
     try {
-      await navigator.clipboard.writeText(currentAnalysis.summary || "");
+      await navigator.clipboard.writeText(briefAsText(currentAnalysis));
       button.textContent = "Copied";
     } catch (_) {
       button.textContent = "Copy failed";
     }
-    setTimeout(function () { button.textContent = "Copy summary"; }, 2000);
+    setTimeout(function () { button.textContent = "Copy brief"; }, 2000);
   });
   document.getElementById("btn-upload").addEventListener("click", function () {
     document.getElementById("input-file").click();
@@ -41,6 +41,34 @@ document.addEventListener("DOMContentLoaded", function () {
     seekVideo(event.currentTarget.dataset.start);
   });
   document.getElementById("video-player").addEventListener("timeupdate", updateActiveTranscript);
+  window.addEventListener("hashchange", applyRoute);
+  document.getElementById("btn-copy-link").addEventListener("click", async function (event) {
+    var button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(location.href);
+      button.textContent = "Link copied";
+    } catch (_) {
+      button.textContent = "Copy failed";
+    }
+    setTimeout(function () { button.textContent = "Copy link"; }, 2000);
+  });
+  // Shortcuts: 1/2/3 switch pages, / focuses Q&A, Esc closes the inspector.
+  document.addEventListener("keydown", function (event) {
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "Escape") { closeEvidenceDrawer(); return; }
+    var target = event.target;
+    if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+    if (document.getElementById("results").hidden) return;
+    var tabs = { "1": "tab-summary", "2": "tab-flashcards", "3": "tab-graph" };
+    if (tabs[event.key]) {
+      event.preventDefault();
+      selectTab(document.getElementById(tabs[event.key]));
+    } else if (event.key === "/") {
+      event.preventDefault();
+      document.getElementById("qa-input").focus();
+    }
+  });
+  if (parseRoute().jobId) applyRoute();
   document.querySelectorAll(".study-tab").forEach(function (tab) {
     tab.addEventListener("click", function () { selectTab(tab); });
     tab.addEventListener("keydown", function (event) {
@@ -86,12 +114,13 @@ function initForms() {
       formData.append("url", url);
       formData.append("model", document.getElementById("select-model-file").value);
       var result = await readJson(await fetch("/api/analyze/url", { method: "POST", body: formData }));
-      if (result.job_id) {
+      var jobId = result.job_id;
+      if (jobId) {
         updateProcessingDetails(result.metadata || result);
         await waitForResult(result.job_id);
         result = await readJson(await fetch("/result/" + result.job_id));
       }
-      loadAnalysisData(result, null, youtubeId);
+      loadAnalysisData(result, null, youtubeId, jobId);
     } catch (error) {
       showInputError(error.message);
     } finally {
@@ -112,7 +141,7 @@ function initForms() {
       var job = await readJson(await fetch("/process", { method: "POST", body: formData }));
       await waitForResult(job.job_id);
       var playable = /\.(mp4|mkv|webm|mp3|wav)$/i.test(file.name);
-      loadAnalysisData(await readJson(await fetch("/result/" + job.job_id)), playable ? URL.createObjectURL(file) : null);
+      loadAnalysisData(await readJson(await fetch("/result/" + job.job_id)), playable ? URL.createObjectURL(file) : null, null, job.job_id);
     } catch (error) {
       showInputError("Processing failed: " + error.message);
     } finally {
@@ -176,6 +205,45 @@ function selectTab(tab) {
     document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
   });
   if (tab.id === "tab-graph" && currentAnalysis) renderKnowledgeGraph(currentAnalysis.graph || { nodes: [], edges: [] });
+  var page = tab.id.replace("tab-", "");
+  if (currentJobId) {
+    var hash = "#/" + encodeURIComponent(currentJobId) + "/" + page;
+    if (location.hash !== hash) location.hash = hash;
+    document.title = PAGE_TITLES[page] + " · " + (currentAnalysis && currentAnalysis.title || "Untitled") + " · seekwise";
+  }
+}
+
+// Hash routes: #/ is the landing page, #/<jobId>/<summary|flashcards|graph> is a result page.
+var PAGE_TITLES = { summary: "Summary", flashcards: "Flashcards", graph: "Graph" };
+
+function parseRoute() {
+  var parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  var page = PAGE_TITLES[parts[1]] ? parts[1] : "summary";
+  return { jobId: parts[0] ? decodeURIComponent(parts[0]) : null, page: page };
+}
+
+async function applyRoute() {
+  var route = parseRoute();
+  if (!route.jobId) {
+    if (!document.getElementById("results").hidden) resetToHero();
+    return;
+  }
+  if (route.jobId !== currentJobId) {
+    try {
+      toggleLoading(true, "Opening saved result...");
+      var status = await readJson(await fetch("/status/" + encodeURIComponent(route.jobId)));
+      if (status.status !== "completed") await waitForResult(route.jobId);
+      loadAnalysisData(await readJson(await fetch("/result/" + encodeURIComponent(route.jobId))), null, null, route.jobId);
+    } catch (error) {
+      history.replaceState(null, "", "#/");
+      resetToHero();
+      showInputError("That result is no longer available (" + error.message + "). Results are kept until the server restarts.");
+      return;
+    } finally {
+      toggleLoading(false);
+    }
+  }
+  selectTab(document.getElementById("tab-" + route.page));
 }
 
 async function loadDemo() {
@@ -226,9 +294,10 @@ function toggleLoading(loading, text, metadata) {
 }
 
 
-function loadAnalysisData(data, videoUrl, youtubeId) {
+function loadAnalysisData(data, videoUrl, youtubeId, jobId) {
   currentAnalysis = data;
-  currentJobId = data.video_id;
+  // /ask looks jobs up by job id; only the demo's job id equals its video_id.
+  currentJobId = jobId || data.video_id;
   if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
   currentVideoUrl = videoUrl || null;
   currentYoutubeId = youtubeId || null;
@@ -241,7 +310,7 @@ function loadAnalysisData(data, videoUrl, youtubeId) {
   document.getElementById("video-player-placeholder").classList.toggle("hidden", Boolean(videoUrl || youtubeId));
   document.getElementById("video-title").textContent = data.title || "Untitled Video";
   document.getElementById("video-duration-badge").textContent = formatTime(data.duration);
-  document.getElementById("video-summary").textContent = data.summary || "No summary provided.";
+  renderBrief(data);
   document.getElementById("btn-copy-summary").disabled = !data.summary;
   document.getElementById("transcript-search").value = "";
   renderChapters(data.chapters || []);
@@ -265,6 +334,7 @@ function loadAnalysisData(data, videoUrl, youtubeId) {
   document.getElementById("hero").hidden = true;
   document.getElementById("results").hidden = false;
   document.getElementById("btn-new-video").hidden = false;
+  document.getElementById("btn-copy-link").hidden = false;
   window.scrollTo(0, 0);
 }
 
@@ -288,17 +358,119 @@ function resetToHero() {
   document.getElementById("results").hidden = true;
   document.getElementById("hero").hidden = false;
   document.getElementById("btn-new-video").hidden = true;
+  document.getElementById("btn-copy-link").hidden = true;
   document.getElementById("input-url").focus();
+  if (location.hash.length > 2) history.pushState(null, "", "#/");
+  document.title = "seekwise - find the moments that matter";
 }
 
-function renderFlashcards(cards, segments) {
-  cards = cards.filter(function (card) {
+// Keep only cards whose key quote appears verbatim in the transcript at the cited time.
+function verifiedFlashcards(cards, segments) {
+  return cards.filter(function (card) {
     var quote = String(card.key_quote || "").toLowerCase().replace(/\s+/g, " ").trim();
     var evidence = segments.filter(function (segment) {
       return segment.end >= card.start_sec && segment.start <= card.end_sec;
     }).map(function (segment) { return segment.text; }).join(" ").toLowerCase().replace(/\s+/g, " ");
     return quote && evidence.includes(quote);
   });
+}
+
+function splitSentences(text) {
+  return (String(text || "").match(/[^.!?]+(?:[.!?]+|$)/g) || []).map(function (part) { return part.trim(); }).filter(Boolean);
+}
+
+function renderBrief(data) {
+  var sentences = splitSentences(data.summary);
+  document.getElementById("brief-headline").textContent = sentences[0] || "No summary provided.";
+  document.getElementById("video-summary").textContent = sentences.slice(1).join(" ");
+  document.getElementById("video-summary").hidden = sentences.length < 2;
+
+  var takeaways = verifiedFlashcards(data.flashcards || [], data.transcript || []);
+  var grounding = data.grounding || {};
+  var total = grounding.total_edges || 0;
+  var rate = total ? grounding.grounded_edges / total : null;
+  var glance = document.getElementById("brief-glance");
+  glance.replaceChildren();
+  [
+    ["Runtime", formatTime(data.duration)],
+    ["Chapters", String((data.chapters || []).length)],
+    ["Verified takeaways", String(takeaways.length)],
+    ["Evidence", total ? grounding.grounded_edges + "/" + total + " grounded" : "No claims", rate == null ? "" : rate >= 0.9 ? "is-strong" : rate >= 0.6 ? "is-mixed" : "is-weak"]
+  ].forEach(function (item) {
+    var wrap = document.createElement("div");
+    if (item[2]) wrap.className = item[2];
+    var term = document.createElement("dt");
+    term.textContent = item[0];
+    var value = document.createElement("dd");
+    value.textContent = item[1];
+    wrap.append(term, value);
+    glance.appendChild(wrap);
+  });
+
+  // Core concepts: entities with the most grounded relationships.
+  var graph = data.graph || { nodes: [], edges: [] };
+  var degree = {};
+  graph.edges.filter(function (edge) { return edge.grounded !== false; }).forEach(function (edge) {
+    degree[edge.source] = (degree[edge.source] || 0) + 1;
+    degree[edge.target] = (degree[edge.target] || 0) + 1;
+  });
+  var concepts = graph.nodes.filter(function (node) { return degree[node.id]; })
+    .sort(function (a, b) { return degree[b.id] - degree[a.id]; }).slice(0, 5);
+  var conceptList = document.getElementById("brief-concepts");
+  conceptList.replaceChildren();
+  concepts.forEach(function (node) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "concept-chip";
+    chip.innerHTML = "<span></span><small></small>";
+    chip.firstChild.textContent = node.label;
+    chip.lastChild.textContent = degree[node.id] + (degree[node.id] === 1 ? " link" : " links");
+    chip.title = "Show " + node.label + " in the graph";
+    chip.addEventListener("click", function () {
+      selectTab(document.getElementById("tab-graph"));
+      showNodeMentions(node);
+    });
+    conceptList.appendChild(chip);
+  });
+  document.getElementById("brief-concepts-block").hidden = !concepts.length;
+
+  var list = document.getElementById("brief-takeaways");
+  list.replaceChildren();
+  takeaways.forEach(function (card) {
+    var item = document.createElement("li");
+    var text = document.createElement("span");
+    text.textContent = card.answer;
+    var jump = document.createElement("button");
+    jump.type = "button";
+    jump.className = "citation-pill verified";
+    jump.textContent = formatTime(card.start_sec);
+    jump.title = "Jump to the supporting moment";
+    jump.addEventListener("click", function () { seekVideo(card.start_sec); });
+    item.append(text, jump);
+    list.appendChild(item);
+  });
+  document.getElementById("brief-takeaways-block").hidden = !takeaways.length;
+}
+
+function briefAsText(data) {
+  var lines = [data.title || "Untitled video", "", data.summary || ""];
+  var takeaways = verifiedFlashcards(data.flashcards || [], data.transcript || []);
+  if (takeaways.length) {
+    lines.push("", "What to remember:");
+    takeaways.forEach(function (card) { lines.push("- " + card.answer + " [" + formatTime(card.start_sec) + "]"); });
+  }
+  if ((data.chapters || []).length) {
+    lines.push("", "Chapters:");
+    data.chapters.forEach(function (chapter) {
+      lines.push("- [" + formatTime(chapter.start_sec == null ? chapter.start : chapter.start_sec) + "] " + chapter.title);
+    });
+  }
+  lines.push("", location.href);
+  return lines.join("\n");
+}
+
+function renderFlashcards(cards, segments) {
+  cards = verifiedFlashcards(cards, segments);
   var container = document.getElementById("flashcards-list");
   document.getElementById("flashcards-count").textContent = cards.length + (cards.length === 1 ? " Card" : " Cards");
   container.replaceChildren();
@@ -365,11 +537,28 @@ function renderTranscript(segments) {
     container.appendChild(row);
   });
   var search = document.getElementById("transcript-search");
+  var empty = document.createElement("p");
+  empty.className = "placeholder-text transcript-empty";
+  empty.hidden = true;
+  container.appendChild(empty);
   search.oninput = function () {
-    var query = search.value.toLowerCase();
+    var query = search.value.trim().toLowerCase();
+    var matches = 0;
     container.querySelectorAll(".transcript-segment-row").forEach(function (row) {
-      row.classList.toggle("filtered-out", !row.textContent.toLowerCase().includes(query));
+      var text = row.querySelector(".seg-text");
+      var source = text.textContent;
+      var hit = !query || source.toLowerCase().includes(query);
+      row.classList.toggle("filtered-out", !hit);
+      if (hit) matches++;
+      text.replaceChildren();
+      if (!query || !hit) { text.textContent = source; return; }
+      var index = source.toLowerCase().indexOf(query);
+      var mark = document.createElement("mark");
+      mark.textContent = source.slice(index, index + query.length);
+      text.append(source.slice(0, index), mark, source.slice(index + query.length));
     });
+    empty.hidden = matches > 0;
+    empty.textContent = "No transcript lines match “" + search.value.trim() + "”.";
   };
 }
 
@@ -392,9 +581,16 @@ function updateActiveTranscript() {
 }
 
 function scrollToTranscriptTime(seconds) {
+  var time = Number(seconds) || 0;
   var rows = Array.from(document.querySelectorAll(".transcript-segment-row"));
-  var row = rows.find(function (candidate) { return Number(candidate.dataset.start) >= Number(seconds) - 1; }) || rows[rows.length - 1];
-  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+  // The segment containing the time; otherwise the last one that starts before it.
+  var row = rows.find(function (candidate) { return time >= Number(candidate.dataset.start) && time < Number(candidate.dataset.end); }) ||
+    rows.filter(function (candidate) { return Number(candidate.dataset.start) <= time; }).pop() || rows[0];
+  if (!row) return;
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  row.classList.remove("evidence-flash");
+  void row.offsetWidth; // restart the animation when the same row is hit twice
+  row.classList.add("evidence-flash");
 }
 
 function renderKnowledgeGraph(graphData) {
@@ -444,8 +640,8 @@ function renderKnowledgeGraph(graphData) {
   var data = { nodes: new window.vis.DataSet(nodes), edges: new window.vis.DataSet(edges) };
   if (visNetworkInstance) visNetworkInstance.destroy();
   visNetworkInstance = new window.vis.Network(container, data, {
-    nodes: { shape: "dot", borderWidth: 1, color: { background: "#2A3A3D", border: "#4FB3A3", highlight: { background: "#4FB3A3", border: "#4FB3A3" }, hover: { background: "#34484B", border: "#4FB3A3" } }, font: { color: "#E8EAED", size: 13, face: "Inter, system-ui, sans-serif", strokeWidth: 0 } },
-    edges: { width: 1, color: { color: "#3A414A", highlight: "#4FB3A3", hover: "#9BA3AE" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } }, smooth: { type: "continuous" }, font: { size: 0 } },
+    nodes: { shape: "dot", borderWidth: 1, color: { background: "#141414", border: "#FAFAFA", highlight: { background: "#F59E0B", border: "#F59E0B" }, hover: { background: "#262626", border: "#FFFFFF" } }, font: { color: "#FAFAFA", size: 13, face: "Inter, system-ui, sans-serif", strokeWidth: 0 } },
+    edges: { width: 1, color: { color: "#3A3A3A", highlight: "#3B82F6", hover: "#8F8F8F" }, arrows: { to: { enabled: true, scaleFactor: 0.5 } }, smooth: { type: "continuous" }, font: { size: 0 } },
     physics: { stabilization: { iterations: 200 }, barnesHut: { gravitationalConstant: -6000, springLength: 160, avoidOverlap: 0.6 } },
     interaction: { hover: true, tooltipDelay: 150 }
   });
