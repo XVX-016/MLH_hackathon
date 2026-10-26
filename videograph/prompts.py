@@ -42,8 +42,13 @@ Return ONLY JSON:
 """
 
 SUMMARY_PROMPT = """
-Write a concise executive summary based only on these video chapters and
-timestamped entity gists.
+Write a short summary of this video based only on these chapters and timestamped gists.
+
+- First sentence: the video's main point or answer in at most 25 words, stated directly.
+  It is shown on its own as a headline, so never start with "This video", "In this video", or "The speaker".
+- Then 2-3 sentences on how the video supports that point.
+- End with one sentence on the practical takeaway or the main limitation.
+- Use only facts present in the chapters and gists.
 
 Chapters:
 {chapters}
@@ -59,9 +64,14 @@ EXTRACT_GRAPH_PROMPT = """
 You are an expert knowledge graph engineer. Analyze the following video transcript chunk.
 Extract the key entities (Concepts, Technologies, People, Organizations, Methods) and directed relationships between them.
 
-CRITICAL REQUIREMENT:
-EVERY edge MUST carry `evidence_quote` which is an EXACT or virtually exact substring quoted from the transcript, along with `start_time` and `end_time` (in seconds) matching where that evidence occurred in the transcript chunk.
-Do not hallucinate edges without proof in the text.
+CRITICAL REQUIREMENTS:
+- EVERY edge MUST carry `evidence_quote`: one contiguous passage copied character for character from the transcript.
+  Do not paraphrase, fix grammar, or join separate passages with "..." - pick the single passage that states the relation.
+- `start_time` and `end_time` are the timestamps of the transcript line(s) that contain that exact passage.
+- `relation` is a short, specific verb phrase in lowercase taken from what is said, e.g. "announces", "priced at",
+  "powered by", "replaces", "competes with", "is set in". Never use vague predicates such as "uses", "is", "has",
+  "implements", or "related to".
+- Do not create an edge unless the quote itself states the relationship.
 
 Transcript Chunk (from {chunk_start:.1f}s to {chunk_end:.1f}s):
 {chunk_text}
@@ -80,7 +90,7 @@ Return ONLY valid JSON matching this exact structure:
     {{
       "source": "source_node_id",
       "target": "target_node_id",
-      "relation": "USES | EXPLAINS | IMPROVES | CONTRASTS_WITH | DEPENDS_ON | CRITIQUES | IMPLEMENTS",
+      "relation": "specific verb phrase, e.g. priced at",
       "evidence_quote": "exact quote from transcript here",
       "start_time": {chunk_start:.1f},
       "end_time": {chunk_end:.1f},
@@ -168,8 +178,10 @@ Return ONLY valid JSON matching this structure:
 FLASHCARDS_PROMPT = """
 You are an expert educator creating study flashcards from a video transcript chunk.
 For each key concept or claim in the chunk, produce one flashcard with:
-- A clear conceptual question on the front.
-- A concise, grounded answer on the back.
+- A clear question on the front that stands on its own: a reader who has not seen the video must
+  understand it. Never write "mentioned in the transcript", "in the video", "the speaker says", or
+  similar; ask about the subject itself (e.g. "What is the starting price of the Apple TV 4K?").
+- A concise answer on the back, written as a self-contained statement of the fact or conclusion.
 - An exact verbatim quote from the chunk supporting the answer (max 25 words).
 - The start and end timestamps (seconds) of the supporting quote.
 
