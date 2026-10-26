@@ -5,17 +5,20 @@
 VideoGraph converts any video, audio file, subtitles, or YouTube URL into an
 interactive, evidence-grounded study companion:
 
-1. **Intuitive YouTube Input**: The user pastes a YouTube link (or uses the 1-click
-   offline demo / file upload). VideoGraph fetches the video details (Title,
-   Duration, Channel) and initiates processing.
-2. **Interactive 3-Tab Presentation**: Once processing finishes, the interface
-   prominently displays the **Video Title** on top and renders three dedicated tabs:
+1. **Minimalist Initial State**: The user sees a distraction-free hero layout with an
+   ambient SVG grid / dark background and a single centered YouTube link input bar
+   (plus quick pill buttons for the 1-click offline demo and file upload).
+2. **Metadata Fetch & Processing**: Upon submitting, VideoGraph fetches video details
+   (Title, Duration, Channel) and enters a visual progress state.
+3. **Interactive 3-Tab Presentation**: Once processing finishes, the interface
+   smoothly transitions to display the **Video Title** prominently on top and renders
+   three dedicated tabs:
    - 📑 **Summary**: Executive overview, chronological chapters, and key takeaways.
    - 🗂️ **Flashcards**: Interactive study cards with question prompts on front, and
      concise answers, supporting verbatim quotes, and `[MM:SS]` jump links on back.
    - 🕸️ **Graph**: Interactive Vis.js knowledge graph topology mapping concepts,
      technologies, and verified relationships with evidence inspection modals.
-3. **Verified Q&A**: Users can query the transcript at any time and receive answers
+4. **Verified Q&A**: Users can query the transcript at any time and receive answers
    strictly grounded with clickable `[MM:SS]` timestamp citations.
 
 ## Non-negotiable agent launch protocol
