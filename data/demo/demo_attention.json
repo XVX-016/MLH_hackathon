@@ -1,0 +1,33 @@
+{
+  "video_id": "demo_attention",
+  "title": "Attention mechanisms, explained",
+  "duration": 76.0,
+  "summary": "This offline demo explains how attention weighs relevant context and why multiple heads learn complementary relationships. Every graph edge and answer citation can be traced to its transcript evidence.",
+  "transcript": [
+    {"id": 0, "start": 0.0, "end": 13.0, "text": "Attention lets a model weigh the tokens that are most relevant to the current prediction."},
+    {"id": 1, "start": 13.0, "end": 28.0, "text": "The query compares with keys, and the resulting weights select information from values."},
+    {"id": 2, "start": 28.0, "end": 45.0, "text": "Multi-head attention repeats this process in parallel so different heads can focus on different relationships."},
+    {"id": 3, "start": 45.0, "end": 61.0, "text": "The head outputs are combined, giving the next layer several views of the same context."},
+    {"id": 4, "start": 61.0, "end": 76.0, "text": "A grounded answer should link back to the exact timestamp and quote that support it."}
+  ],
+  "chapters": [
+    {"title": "Attention selects relevant context", "start_sec": 0.0, "summary": "The basic role of attention and its relevance weights."},
+    {"title": "Queries, keys, and values", "start_sec": 13.0, "summary": "How comparisons produce value-selection weights."},
+    {"title": "Why use multiple heads", "start_sec": 28.0, "summary": "Parallel heads capture different kinds of relationships."},
+    {"title": "Evidence-grounded answers", "start_sec": 61.0, "summary": "Answers must expose their supporting quote and time."}
+  ],
+  "graph": {
+    "nodes": [
+      {"id": "attention", "label": "Attention", "type": "Concept", "description": "Context relevance weighting"},
+      {"id": "query", "label": "Query", "type": "Concept", "description": "Current lookup representation"},
+      {"id": "key", "label": "Key", "type": "Concept", "description": "Representation compared with a query"},
+      {"id": "value", "label": "Value", "type": "Concept", "description": "Information selected by attention weights"},
+      {"id": "multi_head_attention", "label": "Multi-head attention", "type": "Method", "description": "Parallel attention heads"}
+    ],
+    "edges": [
+      {"source": "attention", "target": "value", "relation": "SELECTS", "evidence_quote": "the resulting weights select information from values", "start_time": 13.0, "end_time": 28.0, "confidence": 1.0, "grounded": true},
+      {"source": "query", "target": "key", "relation": "COMPARES_WITH", "evidence_quote": "The query compares with keys", "start_time": 13.0, "end_time": 28.0, "confidence": 1.0, "grounded": true},
+      {"source": "multi_head_attention", "target": "attention", "relation": "REPEATS_IN_PARALLEL", "evidence_quote": "Multi-head attention repeats this process in parallel", "start_time": 28.0, "end_time": 45.0, "confidence": 1.0, "grounded": true}
+    ]
+  }
+}

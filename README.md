@@ -65,6 +65,12 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 Navigate to `http://localhost:8000` to interact with the dashboard, load the built-in demo sample, or submit any video/audio/subtitles!
 
+The **Load Demo Sample** button works offline and demonstrates the complete
+evidence path: chapters, transcript, grounded graph edges, and timestamp-linked
+answers. Real uploads support MP4, MKV, WebM, MP3, WAV, VTT, and SRT files up
+to 100 MB. URL ingestion is intentionally not enabled in this build; download
+media you are authorized to analyze or upload its subtitles instead.
+
 ### 3. Run via CLI
 ```bash
 # Analyze a video or subtitles file
