@@ -35,7 +35,14 @@ def parse_timestamp_to_seconds(ts: str) -> float:
 
 
 def parse_vtt_or_srt(file_content: str) -> List[Segment]:
-    """Parse WebVTT or SubRip (SRT) format text into timed Segments."""
+    """Parse WebVTT or SubRip (SRT) format text into timed Segments.
+
+    Raises:
+        ValueError: If file_content is empty or contains no valid subtitle cues.
+    """
+    if not file_content or not file_content.strip():
+        raise ValueError("Subtitle file content is empty.")
+
     segments: List[Segment] = []
     lines = file_content.splitlines()
 
@@ -83,6 +90,8 @@ def parse_vtt_or_srt(file_content: str) -> List[Segment]:
                 flush_current()
 
     flush_current()
+    if not segments:
+        raise ValueError("Malformed subtitle format: no valid timestamped cues found.")
     return segments
 
 
