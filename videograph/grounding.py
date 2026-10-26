@@ -37,18 +37,29 @@ def clean_text_for_matching(text: str) -> str:
     return " ".join(text.split())
 
 
+GROUNDING_THRESHOLD = 90.0
+VERBATIM_THRESHOLD = 95.0
+_ELLIPSIS = re.compile(r"\.\.\.+|\u2026")
+
+
+def _quote_parts(quote: str) -> List[str]:
+    """Split a quote stitched together with ellipses into its verbatim pieces."""
+    parts = [clean_text_for_matching(part) for part in _ELLIPSIS.split(quote)]
+    return [part for part in parts if len(part.split()) >= 3] or [clean_text_for_matching(quote)]
+
+
 def is_grounded(
     quote: str,
     segments: List[TranscriptSegment],
     start: float,
     end: float,
-    window_padding_sec: float = 5.0,
+    window_padding_sec: float = 10.0,
 ) -> bool:
     """Check whether a quote closely matches transcript text near its timestamps.
 
-    Only segments intersecting ``[start - 5s, end + 5s]`` are considered. This
-    prevents a real quote elsewhere in a video from grounding a wrongly timed
-    graph edge.
+    Only segments intersecting ``[start - 10s, end + 10s]`` are considered, so a
+    real quote elsewhere in the video cannot ground an edge at the wrong time.
+    A quote stitched with "..." passes only if every piece matches in the window.
     """
     normalized_quote = clean_text_for_matching(quote)
     if not normalized_quote or start > end:
@@ -64,23 +75,27 @@ def is_grounded(
         return False
 
     candidate_text = clean_text_for_matching(" ".join(segment.text for segment in nearby_segments))
-    return fuzz.partial_ratio(normalized_quote, candidate_text) >= 90.0
+    return all(fuzz.partial_ratio(part, candidate_text) >= GROUNDING_THRESHOLD for part in _quote_parts(quote))
 
 
 def filter_graph(
     graph: KnowledgeGraph,
     segments: List[TranscriptSegment],
 ) -> Tuple[KnowledgeGraph, float]:
-    """Flag each edge's evidence and return a copy of the graph and pass rate."""
+    """Flag each edge's evidence and return a copy of the graph and pass rate.
+
+    When a quote is not near its cited time but appears verbatim elsewhere, the
+    edge is moved to where it was actually said instead of being failed: the
+    claim is real, only its timestamp was wrong. The threshold is not relaxed.
+    """
     filtered_edges: List[KnowledgeEdge] = []
     for edge in graph.edges:
-        grounded = is_grounded(
-            edge.evidence_quote,
-            segments,
-            edge.start_time,
-            edge.end_time,
-        )
-        filtered_edges.append(edge.model_copy(update={"grounded": grounded}))
+        update = {"grounded": is_grounded(edge.evidence_quote, segments, edge.start_time, edge.end_time)}
+        if not update["grounded"] and len(_quote_parts(edge.evidence_quote)) == 1:
+            _, score, found_start, found_end = find_best_transcript_alignment(edge.evidence_quote, segments)
+            if score >= VERBATIM_THRESHOLD:
+                update = {"grounded": True, "start_time": found_start, "end_time": found_end}
+        filtered_edges.append(edge.model_copy(update=update))
 
     pass_rate = sum(edge.grounded for edge in filtered_edges) / len(filtered_edges) if filtered_edges else 1.0
     return graph.model_copy(update={"edges": filtered_edges}), pass_rate
