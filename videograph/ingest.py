@@ -8,8 +8,9 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import imageio_ffmpeg
 
 MAX_VIDEO_DURATION_SEC = 600.0  # 10 minutes max
@@ -104,15 +105,37 @@ extract_audio = ingest_media
 get_video_duration = get_media_duration
 
 
-def _get_ytdlp_binary() -> str:
-    """Return yt-dlp executable, preferring system install."""
-    ytdlp = shutil.which("yt-dlp")
-    if ytdlp:
-        return ytdlp
+def _get_ytdlp_cmd() -> List[str]:
+    """Return command list for invoking yt-dlp across system, Scripts, or python module."""
+    sys_ytdlp = shutil.which("yt-dlp") or shutil.which("yt-dlp.exe")
+    if sys_ytdlp:
+        return [sys_ytdlp]
+
+    candidates = [
+        Path(sys.executable).parent / "Scripts" / "yt-dlp.exe",
+        Path(sys.executable).parent / "yt-dlp.exe",
+        Path(os.environ.get("APPDATA", "")) / "Python" / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts" / "yt-dlp.exe",
+        Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Roaming" / "Python" / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts" / "yt-dlp.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return [str(candidate)]
+
+    try:
+        import yt_dlp  # noqa: F401
+        return [sys.executable, "-m", "yt_dlp"]
+    except ImportError:
+        pass
+
     raise RuntimeError(
         "yt-dlp is required for YouTube URL support. "
         "Install it with: pip install yt-dlp"
     )
+
+
+def _get_ytdlp_binary() -> str:
+    """Return yt-dlp executable, preferring system install."""
+    return _get_ytdlp_cmd()[0]
 
 
 def fetch_youtube_metadata(url: str) -> dict:
@@ -130,10 +153,10 @@ def fetch_youtube_metadata(url: str) -> dict:
         ValueError: If the URL is not a valid or accessible YouTube video.
         RuntimeError: If yt-dlp is not installed or exits unexpectedly.
     """
-    ytdlp = _get_ytdlp_binary()
     cmd = [
-        ytdlp,
+        *_get_ytdlp_cmd(),
         "--no-playlist",
+        "--no-update",
         "--skip-download",
         "--print", "%(title)s\t%(duration)s\t%(channel)s\t%(thumbnail)s",
         url,
@@ -164,6 +187,72 @@ def fetch_youtube_metadata(url: str) -> dict:
         "thumbnail": parts[3] if len(parts) > 3 else "",
         "url": url,
     }
+
+
+def download_youtube_subtitles(
+    url: str,
+    output_dir: str,
+    lang: str = "en",
+    max_duration_sec: float = MAX_VIDEO_DURATION_SEC,
+) -> Optional[str]:
+    """Download auto-generated or manual subtitles from a YouTube video.
+
+    This is the preferred fast path for YouTube URL processing — it avoids
+    downloading any audio/video bytes and is immune to 403 errors.
+
+    Args:
+        url: A YouTube video URL.
+        output_dir: Directory in which to save the subtitle file.
+        lang: Subtitle language code (default: ``en``).
+        max_duration_sec: Maximum allowed duration in seconds.
+
+    Returns:
+        Absolute path to the downloaded VTT/SRT file, or ``None`` if no
+        subtitles are available for the requested language.
+
+    Raises:
+        ValueError: If the video exceeds the duration limit.
+    """
+    meta = fetch_youtube_metadata(url)
+    if meta["duration"] > max_duration_sec:
+        raise ValueError(
+            f"YouTube video duration ({meta['duration']:.0f}s) exceeds maximum "
+            f"allowed {max_duration_sec:.0f}s (10 minutes)."
+        )
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_stem = "".join(c if c.isalnum() or c in " _-" else "_" for c in meta["title"])[:60].strip()
+    template = str(out_dir / f"{safe_stem}.%(ext)s")
+
+    cmd = [
+        *_get_ytdlp_cmd(),
+        "--no-playlist",
+        "--no-update",
+        "--write-auto-sub",
+        "--write-sub",
+        "--sub-lang", lang,
+        "--sub-format", "vtt/srt/best",
+        "--skip-download",
+        "-o", template,
+        url,
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    # Look for the downloaded subtitle file
+    for ext in ("vtt", "srt"):
+        candidate = out_dir / f"{safe_stem}.{lang}.{ext}"
+        if candidate.is_file():
+            return str(candidate)
+
+    # yt-dlp may have used a slightly different naming pattern
+    for ext in ("vtt", "srt"):
+        matches = list(out_dir.glob(f"{safe_stem}*.{ext}"))
+        if matches:
+            return str(matches[0])
+
+    return None
 
 
 def download_youtube_audio(
@@ -203,10 +292,11 @@ def download_youtube_audio(
     safe_stem = "".join(c if c.isalnum() or c in " _-" else "_" for c in meta["title"])[:60].strip()
     template = str(out_dir / f"{safe_stem}.%(ext)s")
 
-    ytdlp = _get_ytdlp_binary()
     cmd = [
-        ytdlp,
+        *_get_ytdlp_cmd(),
         "--no-playlist",
+        "--no-update",
+        "--extractor-args", "youtube:player_client=android,web",
         "-f", "bestaudio/best",
         "-o", template,
         url,
@@ -223,3 +313,4 @@ def download_youtube_audio(
     raw_path = str(downloaded[-1])
     wav_path = str(out_dir / f"{safe_stem}_16k_mono.wav")
     return ingest_media(raw_path, output_wav_path=wav_path, max_duration_sec=max_duration_sec)
+

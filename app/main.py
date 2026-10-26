@@ -25,6 +25,7 @@ from videograph.graph import to_vis_network_data
 from videograph.ingest import (
     MAX_VIDEO_DURATION_SEC,
     download_youtube_audio,
+    download_youtube_subtitles,
     fetch_youtube_metadata,
     get_media_duration,
     ingest_media,
@@ -192,16 +193,35 @@ def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
 
 
 def _process_youtube_url(job_id: str, url: str, model: str) -> None:
-    """Run pipeline for a YouTube video in background."""
+    """Run pipeline for a YouTube video in background.
+
+    Uses a subtitle-first strategy:
+    1. Try downloading auto-generated/manual captions (fast, no 403 issues).
+    2. Parse the VTT/SRT into segments directly — skips audio download entirely.
+    3. Fall back to audio download + transcription only if no subtitles exist.
+    """
     JOBS[job_id]["status"] = "processing"
     try:
         meta = fetch_youtube_metadata(url)
         title = meta.get("title", "YouTube Analysis")
-        wav_path = download_youtube_audio(url, output_dir=str(UPLOAD_DIR))
-        duration = meta.get("duration", 0.0) or get_media_duration(wav_path)
+        duration = meta.get("duration", 0.0)
+
+        # --- Subtitle-first path (preferred) ---
+        sub_path = download_youtube_subtitles(url, output_dir=str(UPLOAD_DIR))
+        if sub_path:
+            logger.info("Job %s: using subtitles from %s", job_id, sub_path)
+            sub_content = Path(sub_path).read_text(encoding="utf-8", errors="replace")
+            segments = parse_vtt_or_srt(sub_content)
+        else:
+            # --- Audio fallback ---
+            logger.info("Job %s: no subtitles found, falling back to audio download", job_id)
+            wav_path = download_youtube_audio(url, output_dir=str(UPLOAD_DIR))
+            duration = duration or get_media_duration(wav_path)
+            segments = transcribe(wav_path)
+
         if duration > MAX_VIDEO_DURATION_SEC:
             raise ValueError(f"Video duration ({duration:.1f}s) exceeds {MAX_VIDEO_DURATION_SEC:.0f}s limit")
-        segments = transcribe(wav_path)
+
         chunks = chunk_transcript(segments)
         raw_graph = extract_full_graph(chunks, segments, model=model)
         graph = resolve_knowledge_graph(raw_graph)
