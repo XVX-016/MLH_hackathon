@@ -190,6 +190,23 @@ def fetch_youtube_metadata(url: str) -> dict:
         ValueError: If the URL is not a valid or accessible YouTube video.
         RuntimeError: If yt-dlp is not installed or exits unexpectedly.
     """
+    # Fast path: official YouTube oEmbed API (sub-100ms, immune to bot-detection blocks)
+    try:
+        import httpx
+        resp = httpx.get("https://www.youtube.com/oembed", params={"url": url, "format": "json"}, timeout=5.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and data.get("title"):
+                return {
+                    "title": data.get("title") or "Untitled",
+                    "duration": 0.0,
+                    "channel": data.get("author_name") or "",
+                    "thumbnail": data.get("thumbnail_url") or "",
+                    "url": url,
+                }
+    except Exception:
+        pass
+
     cmd = [
         *_get_ytdlp_cmd(),
         "--no-playlist",
@@ -200,7 +217,7 @@ def fetch_youtube_metadata(url: str) -> dict:
     ]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_ytdlp_env())
     if result.returncode != 0:
-        # Fallback 1: direct in-process yt_dlp if CLI subprocess failed
+        # Fallback: direct in-process yt_dlp if CLI subprocess failed
         try:
             import yt_dlp
             with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "no_warnings": True}) as ydl:
@@ -213,25 +230,6 @@ def fetch_youtube_metadata(url: str) -> dict:
                         "thumbnail": info.get("thumbnail") or "",
                         "url": url,
                     }
-        except Exception:
-            pass
-
-        # Fallback 2: official YouTube oEmbed API (immune to datacenter bot protection)
-        try:
-            import json
-            import urllib.parse
-            import urllib.request
-            oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
-            req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode("utf-8"))
-                return {
-                    "title": data.get("title") or "Untitled",
-                    "duration": 0.0,
-                    "channel": data.get("author_name") or "",
-                    "thumbnail": data.get("thumbnail_url") or "",
-                    "url": url,
-                }
         except Exception:
             pass
 
@@ -426,15 +424,31 @@ def fetch_youtube_transcript_api(
         from youtube_transcript_api import YouTubeTranscriptApi
         api = YouTubeTranscriptApi()
         raw_entries = None
-        if hasattr(api, "fetch"):
+        if hasattr(api, "list"):
             try:
-                raw_entries = api.fetch(video_id, languages=langs)
+                t_list = list(api.list(video_id))
+                found = None
+                for t in t_list:
+                    if getattr(t, "language_code", "") in langs:
+                        found = t
+                        break
+                if not found and t_list:
+                    found = t_list[0]
+                if found:
+                    raw_entries = found.fetch()
             except Exception:
-                raw_entries = api.fetch(video_id)
-        elif hasattr(api, "get_transcript"):
-            raw_entries = api.get_transcript(video_id, languages=langs)
-        elif hasattr(YouTubeTranscriptApi, "get_transcript"):
-            raw_entries = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
+                pass
+
+        if not raw_entries:
+            if hasattr(api, "fetch"):
+                try:
+                    raw_entries = api.fetch(video_id, languages=langs)
+                except Exception:
+                    raw_entries = api.fetch(video_id)
+            elif hasattr(api, "get_transcript"):
+                raw_entries = api.get_transcript(video_id, languages=langs)
+            elif hasattr(YouTubeTranscriptApi, "get_transcript"):
+                raw_entries = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
 
         segments: List[Segment] = []
         for idx, entry in enumerate(raw_entries or []):
