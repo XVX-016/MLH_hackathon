@@ -20,12 +20,13 @@ from videograph.schemas import (
     Chapter,
     Entity,
     ChunkExtraction,
+    Flashcard,
     KnowledgeNode,
     KnowledgeEdge,
     KnowledgeGraph,
 )
 from videograph.chunk import TranscriptChunk, chunk_transcript
-from videograph.prompts import CHAPTERS_PROMPT, SUMMARY_PROMPT, EXTRACTION_PROMPT, EXTRACT_GRAPH_PROMPT
+from videograph.prompts import CHAPTERS_PROMPT, SUMMARY_PROMPT, EXTRACTION_PROMPT, EXTRACT_GRAPH_PROMPT, FLASHCARDS_PROMPT
 from videograph.llm import call_llm_json, call_llm_raw
 from videograph.grounding import verify_knowledge_edge
 from videograph.graph import build_networkx_graph
@@ -225,6 +226,54 @@ def generate_chapters_and_summary(
         logger.warning("Invalid summary output; using gists: %s", error)
         summary = " ".join(gists)
     return summary, chapters
+
+
+class FlashcardsOutput(BaseModel):
+    """Validated LLM output for per-chunk flashcard extraction."""
+    flashcards: List[Flashcard] = Field(default_factory=list)
+
+
+def generate_flashcards(
+    chunks: Sequence[TranscriptChunk],
+    model: str = "gemma-4-it",
+    llm_call: Callable[..., BaseModel] = call_llm_json,
+) -> List[Flashcard]:
+    """Extract grounded study flashcards from all transcript chunks.
+
+    Each chunk is sent to the LLM once. On validation failure the chunk is
+    skipped and a warning is logged rather than propagating an exception.
+    Flashcard ids are reassigned globally to ensure uniqueness.
+
+    Args:
+        chunks: Ordered transcript chunks to extract from.
+        model: LLM model identifier.
+        llm_call: Callable matching call_llm_json signature (injectable for tests).
+
+    Returns:
+        Flat list of Flashcard objects across all chunks, with unique sequential ids.
+    """
+    if not chunks:
+        return []
+
+    all_cards: List[Flashcard] = []
+    for chunk in chunks:
+        prompt = FLASHCARDS_PROMPT.format(
+            chunk_start=chunk.start,
+            chunk_end=chunk.end,
+            chunk_text=chunk.formatted_text,
+        )
+        try:
+            output = llm_call(prompt, FlashcardsOutput, model=model)
+            all_cards.extend(output.flashcards)
+        except (ValueError, TypeError, ValidationError) as error:
+            logger.warning(
+                "Skipping flashcard extraction for chunk %s: %s", chunk.chunk_id, error
+            )
+
+    # Re-assign sequential ids globally
+    for idx, card in enumerate(all_cards):
+        card.id = idx
+    return all_cards
 
 
 class RawChunkGraphOutput(BaseModel):
