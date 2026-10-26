@@ -10,7 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
-**Live demo:** _coming soon_ · **Demo video:** _coming soon_
+**Live demo:** <https://seekwise.vercel.app> · **Demo video:** _coming soon_
 
 ---
 

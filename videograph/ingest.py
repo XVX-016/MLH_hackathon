@@ -200,7 +200,7 @@ def fetch_youtube_metadata(url: str) -> dict:
     ]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_ytdlp_env())
     if result.returncode != 0:
-        # Fallback to direct in-process yt_dlp if CLI subprocess failed
+        # Fallback 1: direct in-process yt_dlp if CLI subprocess failed
         try:
             import yt_dlp
             with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "no_warnings": True}) as ydl:
@@ -213,6 +213,25 @@ def fetch_youtube_metadata(url: str) -> dict:
                         "thumbnail": info.get("thumbnail") or "",
                         "url": url,
                     }
+        except Exception:
+            pass
+
+        # Fallback 2: official YouTube oEmbed API (immune to datacenter bot protection)
+        try:
+            import json
+            import urllib.parse
+            import urllib.request
+            oembed_url = f"https://www.youtube.com/oembed?url={urllib.parse.quote(url)}&format=json"
+            req = urllib.request.Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                return {
+                    "title": data.get("title") or "Untitled",
+                    "duration": 0.0,
+                    "channel": data.get("author_name") or "",
+                    "thumbnail": data.get("thumbnail_url") or "",
+                    "url": url,
+                }
         except Exception:
             pass
 
@@ -406,19 +425,29 @@ def fetch_youtube_transcript_api(
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         api = YouTubeTranscriptApi()
-        # Newer versions support .get_transcript directly on instance or class
-        if hasattr(api, "get_transcript"):
+        raw_entries = None
+        if hasattr(api, "fetch"):
+            try:
+                raw_entries = api.fetch(video_id, languages=langs)
+            except Exception:
+                raw_entries = api.fetch(video_id)
+        elif hasattr(api, "get_transcript"):
             raw_entries = api.get_transcript(video_id, languages=langs)
-        else:
+        elif hasattr(YouTubeTranscriptApi, "get_transcript"):
             raw_entries = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
 
         segments: List[Segment] = []
-        for idx, entry in enumerate(raw_entries):
-            text = (entry.get("text") or "").strip()
+        for idx, entry in enumerate(raw_entries or []):
+            if isinstance(entry, dict):
+                text = (entry.get("text") or "").strip()
+                start = float(entry.get("start", 0.0))
+                duration = float(entry.get("duration", 0.0))
+            else:
+                text = (getattr(entry, "text", "") or "").strip()
+                start = float(getattr(entry, "start", 0.0) or 0.0)
+                duration = float(getattr(entry, "duration", 0.0) or 0.0)
             if not text:
                 continue
-            start = float(entry.get("start", 0.0))
-            duration = float(entry.get("duration", 0.0))
             end = max(start + duration, start + 0.1)
             segments.append(
                 Segment(
