@@ -159,6 +159,17 @@ def _get_ytdlp_cmd() -> List[str]:
     )
 
 
+def _ytdlp_env() -> dict:
+    """Return environment dictionary ensuring Python sys.path is included in PYTHONPATH."""
+    env = dict(os.environ)
+    ppath = os.pathsep.join(sys.path)
+    if "PYTHONPATH" in env:
+        env["PYTHONPATH"] = f"{env['PYTHONPATH']}{os.pathsep}{ppath}"
+    else:
+        env["PYTHONPATH"] = ppath
+    return env
+
+
 def _get_ytdlp_binary() -> str:
     """Return yt-dlp executable, preferring system install."""
     return _get_ytdlp_cmd()[0]
@@ -187,8 +198,24 @@ def fetch_youtube_metadata(url: str) -> dict:
         "--print", "%(title)s\t%(duration)s\t%(channel)s\t%(thumbnail)s",
         url,
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_ytdlp_env())
     if result.returncode != 0:
+        # Fallback to direct in-process yt_dlp if CLI subprocess failed
+        try:
+            import yt_dlp
+            with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "no_warnings": True}) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if info:
+                    return {
+                        "title": info.get("title") or "Untitled",
+                        "duration": float(info.get("duration") or 0.0),
+                        "channel": info.get("uploader") or info.get("channel") or "",
+                        "thumbnail": info.get("thumbnail") or "",
+                        "url": url,
+                    }
+        except Exception:
+            pass
+
         stderr_lower = result.stderr.lower()
         if "private" in stderr_lower or "unavailable" in stderr_lower or "not found" in stderr_lower:
             raise ValueError(f"YouTube video is unavailable or private: {url}")
@@ -265,7 +292,7 @@ def download_youtube_subtitles(
         "-o", template,
         url,
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_ytdlp_env())
 
     # Look for the downloaded subtitle file
     for ext in ("vtt", "srt"):
@@ -329,7 +356,7 @@ def download_youtube_audio(
         "-o", template,
         url,
     ]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_ytdlp_env())
     if result.returncode != 0:
         raise RuntimeError(f"yt-dlp audio download failed: {result.stderr.strip()}")
 
