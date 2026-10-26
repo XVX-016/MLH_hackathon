@@ -224,8 +224,8 @@ def test_fallback_chain_success_on_youtube_transcript_api(monkeypatch) -> None:
         lambda url: {"title": "Test Video", "duration": 120.0, "channel": "TestCh", "thumbnail": "", "url": url},
     )
     fake_segments = [
-        Segment(id=0, start=0.0, end=4.0, text="Welcome to the video"),
-        Segment(id=1, start=4.0, end=8.0, text="Knowledge graphs explained"),
+        Segment(id=0, start=0.0, end=4.0, text="Welcome to the video about knowledge graphs."),
+        Segment(id=1, start=4.0, end=8.0, text="Knowledge graphs connect entities with typed relations."),
     ]
     monkeypatch.setattr(
         "videograph.ingest.fetch_youtube_transcript_api",
@@ -234,7 +234,7 @@ def test_fallback_chain_success_on_youtube_transcript_api(monkeypatch) -> None:
 
     segments, meta = ingest_youtube_fallback("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     assert len(segments) == 2
-    assert segments[0].text == "Welcome to the video"
+    assert segments[0].text == "Welcome to the video about knowledge graphs."
     assert meta["title"] == "Test Video"
 
 
@@ -346,3 +346,65 @@ def test_cleanup_media_files(tmp_path) -> None:
     assert not f1.exists() and not f2.exists()
 
 
+
+
+# ── Rolling auto-caption cleanup ──────────────────────────────────────────────
+
+ROLLING_VTT = """WEBVTT
+Kind: captions
+Language: en
+
+00:00:00.160 --> 00:00:02.869
+Apple has finally unveiled their long
+
+00:00:02.869 --> 00:00:02.879
+Apple has finally unveiled their long
+
+00:00:02.879 --> 00:00:05.110
+Apple has finally unveiled their long
+awaited iPhone with a brand new
+
+00:00:05.110 --> 00:00:05.120
+awaited iPhone with a brand new
+
+00:00:05.120 --> 00:00:08.000
+awaited iPhone with a brand new
+design [Music] and a faster chip.
+
+00:00:08.000 --> 00:00:09.000
+[Music]
+
+00:00:09.200 --> 00:00:12.000
+Prices start at 799 dollars in the United States starting next Friday.
+"""
+
+
+def test_clean_caption_segments_collapses_rolling_auto_captions() -> None:
+    from videograph.transcribe import clean_caption_segments, parse_vtt_or_srt
+
+    raw = parse_vtt_or_srt(ROLLING_VTT)
+    cleaned = clean_caption_segments(raw)
+    print(f"rolling captions: {len(raw)} segments before, {len(cleaned)} after")
+
+    assert len(raw) == 7
+    assert [s.text for s in cleaned] == [
+        "Apple has finally unveiled their long awaited iPhone with a brand new design and a faster chip.",
+        "Prices start at 799 dollars in the United States starting next Friday.",
+    ]
+    assert cleaned[0].start == 0.16 and cleaned[0].end == 8.0  # the [Music]-only cue is not speech
+    assert [s.id for s in cleaned] == [0, 1]
+    assert all("[Music]" not in s.text for s in cleaned)
+
+
+def test_clean_caption_segments_drops_exact_repeats_and_keeps_clean_input() -> None:
+    from videograph.schemas import Segment
+    from videograph.transcribe import clean_caption_segments
+
+    clean = [
+        Segment(id=0, start=0.0, end=4.0, text="Attention lets a model weigh the most relevant tokens."),
+        Segment(id=1, start=4.0, end=8.0, text="Attention lets a model weigh the most relevant tokens."),
+        Segment(id=2, start=10.0, end=14.0, text="Multi-head attention repeats this process in parallel."),
+    ]
+    out = clean_caption_segments(clean)
+    assert [s.text for s in out] == [clean[0].text, clean[2].text]
+    assert out[0].end == 8.0

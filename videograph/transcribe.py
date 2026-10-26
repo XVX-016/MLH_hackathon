@@ -36,6 +36,77 @@ def parse_timestamp_to_seconds(ts: str) -> float:
 
 import unicodedata
 
+_CAPTION_TAG = re.compile(r"\[[^\]]*\]|\([^)]*(?:music|applause|laughter)[^)]*\)|<[^>]+>", re.IGNORECASE)
+_SENTENCE_END = (".", "!", "?")
+
+
+def _words(text: str) -> List[str]:
+    return text.lower().split()
+
+
+def clean_caption_segments(
+    segments: List[Segment],
+    min_words: int = 5,
+    max_words: int = 30,
+    max_gap_sec: float = 1.5,
+) -> List[Segment]:
+    """Remove YouTube auto-caption noise from timed segments.
+
+    Auto-captions roll: each cue repeats the previous line and adds a new one,
+    so the raw transcript says everything two or three times. This
+    1. strips tags like [Music] and collapses whitespace,
+    2. merges a cue into the previous one when it extends it (or drops it when
+       it is already contained), keeping the earlier start and the later end,
+    3. trims a repeated overlap between the end of one cue and the start of the next,
+    4. joins short fragments into fuller sentences (up to ``max_words``).
+    """
+    cleaned: List[Segment] = []
+    for segment in segments:
+        text = " ".join(_CAPTION_TAG.sub(" ", segment.text).split())
+        if not text:
+            continue
+        if cleaned:
+            prev = cleaned[-1]
+            prev_lower, text_lower = prev.text.lower(), text.lower()
+            if text_lower == prev_lower or text_lower in prev_lower:
+                prev.end = max(prev.end, segment.end)
+                continue
+            if text_lower.startswith(prev_lower) or prev_lower in text_lower:
+                prev.text = text
+                prev.end = max(prev.end, segment.end)
+                continue
+            # Longest suffix of the previous cue that the new cue starts with.
+            prev_words, words = _words(prev.text), _words(text)
+            overlap = 0
+            for size in range(min(len(prev_words), len(words)), 0, -1):
+                if prev_words[-size:] == words[:size]:
+                    overlap = size
+                    break
+            if overlap >= 2:
+                text = " ".join(text.split()[overlap:])
+                if not text:
+                    prev.end = max(prev.end, segment.end)
+                    continue
+        cleaned.append(Segment(id=0, start=segment.start, end=segment.end, text=text))
+
+    merged: List[Segment] = []
+    for segment in cleaned:
+        if merged:
+            prev = merged[-1]
+            short = len(segment.text.split()) < min_words or len(prev.text.split()) < min_words
+            open_sentence = not prev.text.endswith(_SENTENCE_END)
+            fits = len(prev.text.split()) + len(segment.text.split()) <= max_words
+            if fits and (short or open_sentence) and segment.start - prev.end <= max_gap_sec:
+                prev.text = prev.text + " " + segment.text
+                prev.end = max(prev.end, segment.end)
+                continue
+        merged.append(segment)
+
+    for index, segment in enumerate(merged):
+        segment.id = index
+    return merged
+
+
 def parse_vtt_or_srt(file_content: str) -> List[Segment]:
     """Parse WebVTT or SubRip (SRT) format text into timed Segments.
 

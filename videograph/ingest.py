@@ -456,22 +456,23 @@ def ingest_youtube_fallback(
             f"YouTube video duration ({duration:.0f}s) exceeds maximum allowed {max_duration_sec:.0f}s ({mins} minutes)."
         )
 
+    from videograph.transcribe import clean_caption_segments, parse_vtt_or_srt
+
     # Step 1: youtube-transcript-api
     try:
-        segments = fetch_youtube_transcript_api(url)
+        segments = clean_caption_segments(fetch_youtube_transcript_api(url))
         if segments:
             return segments, meta
     except NeedsUpload:
         pass
 
     # Step 2: yt-dlp subtitle extraction (without downloading video)
-    from videograph.transcribe import parse_vtt_or_srt
     dest_dir = output_dir or os.path.join(str(Path.home()), ".videograph_cache", "subtitles")
     try:
         sub_path = download_youtube_subtitles(url, output_dir=dest_dir, max_duration_sec=max_duration_sec)
         if sub_path and os.path.exists(sub_path):
             content = Path(sub_path).read_text(encoding="utf-8", errors="replace")
-            segments = parse_vtt_or_srt(content)
+            segments = clean_caption_segments(parse_vtt_or_srt(content))
             if segments:
                 return segments, meta
     except Exception:
