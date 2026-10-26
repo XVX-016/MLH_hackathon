@@ -13,27 +13,43 @@
 <body class="dark-theme">
   <header class="navbar">
     <div class="nav-brand"><div class="logo-icon">VG</div><div class="brand-text"><span class="brand-title">videograph</span><span class="brand-badge">Evidence-Grounded KG</span></div></div>
-    <button id="btn-load-sample" class="btn btn-secondary" type="button">Load Demo Sample</button>
+    <button id="btn-new-video" class="btn btn-secondary" type="button" hidden>New video</button>
   </header>
   <main class="app-layout">
-    <section class="input-panel card glassmorphism" aria-labelledby="input-title">
-      <div class="input-header"><h1 id="input-title">Turn a video into timestamped evidence</h1><p class="subtitle">Explore a YouTube link, upload media or subtitles, or load the offline demo.</p></div>
-      <form id="form-url" class="input-group">
-        <label class="visually-hidden" for="input-url">YouTube URL</label>
-        <input type="url" id="input-url" placeholder="Paste a YouTube URL" required>
-        <button type="submit" class="btn btn-primary">Analyze link</button>
-      </form>
-      <form id="form-upload" class="input-group">
-        <label for="input-file">Or upload a file</label>
-        <input type="file" id="input-file" accept=".mp4,.mkv,.webm,.mp3,.wav,.vtt,.srt" required>
-        <label class="visually-hidden" for="select-model-file">Analysis model</label>
-        <select id="select-model-file" class="model-select"><option value="gemma-4-it">Gemma 4</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option></select>
-        <button type="submit" class="btn btn-primary">Process upload <span class="spinner hidden" id="spinner-upload"></span></button>
-      </form>
-      <div id="processing-banner" class="processing-banner hidden" role="status"><div class="pulse-indicator"></div><span id="processing-status-text">Processing...</span></div>
-      <p id="input-error" class="input-error hidden" role="alert"></p>
+    <section id="hero" class="hero" aria-labelledby="input-title">
+      <svg class="hero-grid" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><pattern id="ambient-grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M 48 0 L 0 0 0 48" fill="none" stroke="currentColor" stroke-width="1"/></pattern></defs><rect width="1200" height="800" fill="url(#ambient-grid)"/></svg>
+      <div id="hero-content" class="hero-content">
+        <span class="hero-eyebrow">VIDEO → KNOWLEDGE</span>
+        <h1 id="input-title">Find the moments that matter.</h1>
+        <p class="hero-subtitle">Turn a video into a clear summary, study cards, and a graph of evidence you can trace.</p>
+        <form id="form-url" class="hero-input">
+          <label class="visually-hidden" for="input-url">YouTube URL</label>
+          <input type="url" id="input-url" placeholder="Paste a YouTube video link" required>
+          <button type="submit" class="btn btn-primary">Explore video</button>
+        </form>
+        <div class="hero-actions">
+          <button id="btn-load-sample" class="hero-pill" type="button">Try the demo</button>
+          <button id="btn-upload" class="hero-pill" type="button">Upload a file</button>
+        </div>
+        <form id="form-upload" hidden>
+          <label class="visually-hidden" for="input-file">Media or subtitle file</label>
+          <input type="file" id="input-file" accept=".mp4,.mkv,.webm,.mp3,.wav,.vtt,.srt" required>
+          <label class="visually-hidden" for="select-model-file">Analysis model</label>
+          <select id="select-model-file"><option value="gemma-4-it">Gemma 4</option><option value="gemini-2.5-flash">Gemini 2.5 Flash</option></select>
+          <button type="submit">Process upload <span class="spinner hidden" id="spinner-upload"></span></button>
+        </form>
+        <p id="input-error" class="input-error hidden" role="alert"></p>
+      </div>
+      <div id="processing-card" class="processing-card card glassmorphism" role="status" hidden>
+        <div class="processing-icon"><span class="pulse-indicator"></span></div>
+        <p class="hero-eyebrow">BUILDING YOUR STUDY SPACE</p>
+        <h2 id="processing-title">Fetching video details...</h2>
+        <div class="processing-details"><span id="processing-channel">Channel pending</span><span id="processing-duration">Duration pending</span></div>
+        <div id="processing-banner" class="processing-banner"><span id="processing-status-text">Processing...</span></div>
+      </div>
     </section>
 
+    <div id="results" class="results-view" hidden>
     <section class="card glassmorphism video-info-card" aria-labelledby="video-title">
       <div class="card-header"><h2 id="video-title" class="video-title">Select or upload a video to begin</h2><span id="video-duration-badge" class="badge">00:00</span></div>
       <video id="video-player" class="video-player hidden" controls preload="metadata" aria-label="Video player"></video>
@@ -67,6 +83,7 @@
     <div class="explore-grid">
       <section class="card glassmorphism transcript-card" aria-labelledby="transcript-title"><div class="card-header"><h3 id="transcript-title">Timestamped Transcript</h3><label class="visually-hidden" for="transcript-search">Search transcript</label><input type="search" id="transcript-search" class="search-input" placeholder="Search transcript..."></div><div id="transcript-list" class="transcript-scroll-area"><p class="placeholder-text">Transcript segments will appear here.</p></div></section>
       <section class="card glassmorphism qa-card" aria-labelledby="qa-title"><div class="card-header"><h3 id="qa-title">Grounded Q&amp;A</h3><span class="badge badge-accent">Verified citations</span></div><p class="qa-subtitle">Answers link to supporting transcript moments.</p><div id="qa-chat-history" class="qa-history" aria-live="polite"><div class="qa-message system-message">Load a demo or process a video to ask a question.</div></div><form id="qa-form" class="qa-input-bar"><label class="visually-hidden" for="qa-input">Question about the video</label><input type="text" id="qa-input" placeholder="Ask a question about the video..." required><button type="submit" id="btn-ask-qa" class="btn btn-primary">Ask <span class="spinner hidden" id="spinner-qa"></span></button></form></section>
+    </div>
     </div>
   </main>
   <script src="/static/app.js"></script>

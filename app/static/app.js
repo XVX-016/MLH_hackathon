@@ -8,6 +8,13 @@ let visNetworkInstance = null;
 document.addEventListener("DOMContentLoaded", function () {
   initForms();
   document.getElementById("btn-load-sample").addEventListener("click", loadDemo);
+  document.getElementById("btn-new-video").addEventListener("click", resetToHero);
+  document.getElementById("btn-upload").addEventListener("click", function () {
+    document.getElementById("input-file").click();
+  });
+  document.getElementById("input-file").addEventListener("change", function (event) {
+    if (event.target.files.length) document.getElementById("form-upload").requestSubmit();
+  });
   document.getElementById("btn-close-drawer").addEventListener("click", closeEvidenceDrawer);
   document.getElementById("inspector-timestamp").addEventListener("click", function (event) {
     seekVideo(event.currentTarget.dataset.start);
@@ -47,13 +54,14 @@ function initForms() {
       return;
     }
     showInputError("");
-    toggleLoading(true, "Processing YouTube link...");
+    toggleLoading(true, "Fetching video details...", { title: "Fetching video details..." });
     try {
       var formData = new FormData();
       formData.append("url", url);
       formData.append("model", document.getElementById("select-model-file").value);
       var result = await readJson(await fetch("/api/analyze/url", { method: "POST", body: formData }));
       if (result.job_id) {
+        updateProcessingDetails(result.metadata || result);
         await waitForResult(result.job_id);
         result = await readJson(await fetch("/result/" + result.job_id));
       }
@@ -70,7 +78,7 @@ function initForms() {
     var file = document.getElementById("input-file").files[0];
     if (!file) return;
     showInputError("");
-    toggleLoading(true, "Uploading and processing...");
+    toggleLoading(true, "Uploading and processing...", { title: file.name, channel: "Local upload" });
     try {
       var formData = new FormData();
       formData.append("file", file);
@@ -144,26 +152,44 @@ function selectTab(tab) {
 async function loadDemo() {
   try {
     showInputError("");
+    toggleLoading(true, "Loading the offline demo...", { title: "Offline demo", channel: "Offline demo" });
     var status = await readJson(await fetch("/status/demo_attention"));
     if (status.status !== "completed") throw new Error("Demo result is not ready");
     loadAnalysisData(await readJson(await fetch("/result/demo_attention")));
   } catch (error) {
     showInputError("Could not load demo: " + error.message);
+  } finally {
+    toggleLoading(false);
   }
 }
 
 async function waitForResult(jobId) {
   for (;;) {
     var status = await readJson(await fetch("/status/" + jobId));
+    updateProcessingDetails(status.metadata || status);
+    document.getElementById("processing-status-text").textContent = status.status === "queued" ? "Waiting to start..." : "Analyzing the video...";
     if (status.status === "completed") return;
     if (status.status === "failed") throw new Error(status.error || "Job failed");
     await new Promise(function (resolve) { setTimeout(resolve, 500); });
   }
 }
 
-function toggleLoading(loading, text) {
+function updateProcessingDetails(metadata) {
+  if (metadata.title) document.getElementById("processing-title").textContent = metadata.title;
+  if (metadata.channel) document.getElementById("processing-channel").textContent = metadata.channel;
+  if (metadata.duration != null) document.getElementById("processing-duration").textContent = formatTime(metadata.duration);
+}
+
+function toggleLoading(loading, text, metadata) {
   document.getElementById("spinner-upload").classList.toggle("hidden", !loading);
-  document.getElementById("processing-banner").classList.toggle("hidden", !loading);
+  document.getElementById("hero-content").hidden = loading;
+  document.getElementById("processing-card").hidden = !loading;
+  if (loading) {
+    document.getElementById("processing-title").textContent = "Fetching video details...";
+    document.getElementById("processing-channel").textContent = "Channel pending";
+    document.getElementById("processing-duration").textContent = "Duration pending";
+    updateProcessingDetails(metadata || {});
+  }
   if (text) document.getElementById("processing-status-text").textContent = text;
 }
 
@@ -186,8 +212,36 @@ function loadAnalysisData(data, videoUrl, youtubeId) {
   renderChapters(data.chapters || []);
   renderFlashcards(data.flashcards || [], data.transcript || []);
   renderTranscript(data.transcript || []);
+  document.getElementById("qa-chat-history").replaceChildren();
+  appendChatMessage("system", "Ask a question about this video.");
   closeEvidenceDrawer();
   if (!document.getElementById("panel-graph").hidden) renderKnowledgeGraph(data.graph || { nodes: [], edges: [] });
+  document.getElementById("hero").hidden = true;
+  document.getElementById("results").hidden = false;
+  document.getElementById("btn-new-video").hidden = false;
+  window.scrollTo(0, 0);
+}
+
+function resetToHero() {
+  var player = document.getElementById("video-player");
+  player.pause();
+  player.removeAttribute("src");
+  if (visNetworkInstance) {
+    visNetworkInstance.destroy();
+    visNetworkInstance = null;
+  }
+  document.getElementById("youtube-player").removeAttribute("src");
+  if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
+  currentVideoUrl = null;
+  currentYoutubeId = null;
+  currentJobId = null;
+  currentAnalysis = null;
+  showInputError("");
+  document.getElementById("input-file").value = "";
+  document.getElementById("results").hidden = true;
+  document.getElementById("hero").hidden = false;
+  document.getElementById("btn-new-video").hidden = true;
+  document.getElementById("input-url").focus();
 }
 
 function renderFlashcards(cards, segments) {

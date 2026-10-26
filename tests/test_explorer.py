@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
+from app.main import app
 from eval.evaluate import evaluate_edge_grounding, evaluate_qa_grounding, run_benchmark
 from videograph.graph import to_vis_network_data
 from videograph.schemas import KnowledgeEdge, KnowledgeGraph, KnowledgeNode, QACitation, QAResponse, VideoAnalysisResult
@@ -45,6 +48,18 @@ def test_static_explorer_targets_job_api_and_timestamp_controls() -> None:
     assert "timeupdate" in javascript
     assert "selectEdge" in javascript
     assert "selectNode" in javascript
+
+
+def test_landing_page_starts_with_hero_and_hidden_results() -> None:
+    with TestClient(app) as client:
+        html = client.get("/").text
+
+    assert '<section id="hero"' in html
+    assert '<svg class="hero-grid"' in html
+    assert 'id="btn-load-sample"' in html
+    assert 'id="btn-upload"' in html
+    assert 'id="processing-card"' in html
+    assert '<div id="results" class="results-view" hidden>' in html
 
 
 def test_demo_evaluation_rejects_a_quote_at_the_wrong_timestamp() -> None:
