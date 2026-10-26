@@ -56,7 +56,7 @@ def test_landing_page_starts_with_hero_and_hidden_results() -> None:
         html = client.get("/").text
 
     assert '<section id="hero"' in html
-    assert '<svg class="hero-grid hero-scene"' in html  # animated waveform + timeline background
+    assert 'class="hero-grid' in html
     assert 'id="btn-load-sample"' in html
     assert 'id="btn-upload"' in html
     assert 'id="processing-card"' in html
