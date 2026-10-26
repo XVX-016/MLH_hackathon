@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="videograph", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="seekwise", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -284,12 +284,12 @@ def _process_youtube_url(job_id: str, url: str, model: str) -> None:
 @app.get("/", response_class=HTMLResponse)
 def serve_index() -> HTMLResponse:
     index = STATIC_DIR / "index.html"
-    return HTMLResponse(index.read_text(encoding="utf-8")) if index.exists() else HTMLResponse("<h1>videograph</h1>")
+    return HTMLResponse(index.read_text(encoding="utf-8")) if index.exists() else HTMLResponse("<h1>seekwise</h1>")
 
 
 @app.get("/health")
 def health() -> Dict[str, str]:
-    return {"status": "ok", "app": "videograph"}
+    return {"status": "ok", "app": "seekwise"}
 
 
 @app.post("/process", status_code=202)

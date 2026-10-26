@@ -155,3 +155,9 @@ def test_cli_rejects_missing_file(tmp_path) -> None:
             output_path=str(tmp_path / "out.json"),
         )
 
+
+
+def test_health_reports_seekwise() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health")
+    assert response.json() == {"status": "ok", "app": "seekwise"}
