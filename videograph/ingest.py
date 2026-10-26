@@ -1,6 +1,7 @@
-"""Video ingestion module.
+"""Video and audio ingestion module for videograph.
 
-Handles local video files, URL downloads via yt-dlp, and audio extraction via ffmpeg.
+Converts input audio/video to 16kHz mono WAV using ffmpeg.
+Rejects media files whose duration exceeds 10 minutes (600 seconds).
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 import imageio_ffmpeg
+
+MAX_VIDEO_DURATION_SEC = 600.0  # 10 minutes max
 
 
 def get_ffmpeg_binary() -> str:
@@ -23,91 +26,79 @@ def get_ffmpeg_binary() -> str:
         return "ffmpeg"
 
 
-def get_video_duration(video_path: str) -> float:
-    """Estimate or extract video duration in seconds."""
+def get_media_duration(file_path: str) -> float:
+    """Extract media duration in seconds using ffmpeg probe output."""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
     ffmpeg_exe = get_ffmpeg_binary()
-    try:
-        # Run quick ffmpeg probe
-        cmd = [ffmpeg_exe, "-i", video_path]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        # Parse Duration: 00:01:23.45 from stderr
-        for line in proc.stderr.splitlines():
-            if "Duration:" in line:
+    cmd = [ffmpeg_exe, "-i", file_path]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    # Parse Duration: HH:MM:SS.ss
+    for line in proc.stderr.splitlines():
+        if "Duration:" in line:
+            try:
                 part = line.split("Duration:")[1].split(",")[0].strip()
                 h, m, s = part.split(":")
                 return float(h) * 3600 + float(m) * 60 + float(s)
-    except Exception:
-        pass
+            except Exception:
+                pass
     return 0.0
 
 
-def extract_audio(video_path: str, output_audio_path: Optional[str] = None) -> str:
-    """Extract 16kHz mono WAV or MP3 audio from a video file using ffmpeg.
-    
-    Args:
-        video_path: Path to input video file.
-        output_audio_path: Optional path for generated audio file.
-        
-    Returns:
-        Path to generated audio file.
-    """
-    if not os.path.exists(video_path):
-        raise FileNotFoundError(f"Input video file not found: {video_path}")
+def ingest_media(
+    input_path: str,
+    output_wav_path: Optional[str] = None,
+    max_duration_sec: float = MAX_VIDEO_DURATION_SEC,
+) -> str:
+    """Convert video/audio to 16kHz mono WAV and enforce <= 10 min duration.
 
-    if not output_audio_path:
-        stem = Path(video_path).stem
-        output_audio_path = str(Path(video_path).parent / f"{stem}_audio.mp3")
+    Args:
+        input_path: Source media file path.
+        output_wav_path: Optional destination path for .wav file.
+        max_duration_sec: Maximum permitted duration in seconds (default 600.0s).
+
+    Returns:
+        Path to converted 16kHz mono WAV file.
+
+    Raises:
+        FileNotFoundError: If input_path does not exist.
+        ValueError: If file duration exceeds 10 minutes (600s).
+        RuntimeError: If ffmpeg fails during conversion.
+    """
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Media file not found: {input_path}")
+
+    duration = get_media_duration(input_path)
+    if duration > max_duration_sec:
+        raise ValueError(
+            f"File duration ({duration:.1f}s) exceeds maximum allowed {max_duration_sec:.1f}s (10 minutes)."
+        )
+
+    if not output_wav_path:
+        p = Path(input_path)
+        output_wav_path = str(p.parent / f"{p.stem}_16k_mono.wav")
 
     ffmpeg_exe = get_ffmpeg_binary()
     cmd = [
         ffmpeg_exe,
         "-y",
-        "-i", video_path,
+        "-i", input_path,
         "-vn",
-        "-acodec", "libmp3lame",
+        "-acodec", "pcm_s16le",
         "-ar", "16000",
         "-ac", "1",
-        output_audio_path,
+        output_wav_path,
     ]
 
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg audio extraction failed: {result.stderr}")
 
-    return output_audio_path
+    return output_wav_path
 
 
-def download_video_or_audio(url: str, output_dir: str) -> Tuple[str, str]:
-    """Download video or audio stream from YouTube/web using yt-dlp.
-    
-    Returns:
-        (downloaded_file_path, title)
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    out_template = os.path.join(output_dir, "%(id)s.%(ext)s")
-
-    cmd = [
-        "yt-dlp",
-        "-f", "ba/b",  # Best audio or best video
-        "-o", out_template,
-        "--print", "after_move:filepath",
-        "--print", "title",
-        url,
-    ]
-
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"yt-dlp failed: {proc.stderr}")
-
-    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-    if len(lines) >= 2:
-        file_path = lines[0]
-        title = lines[1]
-    elif len(lines) == 1:
-        file_path = lines[0]
-        title = Path(file_path).stem
-    else:
-        file_path = str(list(Path(output_dir).glob("*.*"))[-1])
-        title = Path(file_path).stem
-
-    return file_path, title
+# Backwards compatibility helpers
+extract_audio = ingest_media
+get_video_duration = get_media_duration
