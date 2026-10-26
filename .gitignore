@@ -1,0 +1,33 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment and secrets
+.env
+.env.local
+*.env
+
+# Local data & uploads
+data/
+data/uploads/
+uploads/
+*.mp4
+*.mkv
+*.webm
+*.mp3
+*.wav
+
+# videograph LLM & temporary caches
+.videograph_cache/
+*.json.cache
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

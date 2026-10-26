@@ -1,0 +1,15 @@
+fastapi==0.135.1
+uvicorn==0.41.0
+pydantic==2.12.5
+pydantic-settings==2.13.1
+networkx==3.4.2
+rapidfuzz==3.14.3
+sentence-transformers==6.2.0
+faiss-cpu==1.15.1
+google-genai==2.33.0
+python-multipart==0.0.22
+python-dotenv==1.2.2
+yt-dlp==2026.7.4
+imageio-ffmpeg==0.6.0
+pytest==9.0.2
+httpx==0.28.1
