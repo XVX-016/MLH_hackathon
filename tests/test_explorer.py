@@ -39,6 +39,7 @@ def test_static_explorer_targets_job_api_and_timestamp_controls() -> None:
 
     for route in ("/process", "/status/", "/result/", "/ask"):
         assert route in javascript
+    assert 'fetch("/api/youtube/metadata"' in javascript
     for element in ("video-player", "graph-network", "transcript-list", "qa-form", "form-url", "flashcards-list"):
         assert element in html
     for view in ("panel-summary", "panel-flashcards", "panel-graph"):

@@ -56,6 +56,11 @@ function initForms() {
     showInputError("");
     toggleLoading(true, "Fetching video details...", { title: "Fetching video details..." });
     try {
+      updateProcessingDetails(await readJson(await fetch("/api/youtube/metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url })
+      })));
       var formData = new FormData();
       formData.append("url", url);
       formData.append("model", document.getElementById("select-model-file").value);
