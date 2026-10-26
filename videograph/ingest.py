@@ -102,3 +102,124 @@ def ingest_media(
 # Backwards compatibility helpers
 extract_audio = ingest_media
 get_video_duration = get_media_duration
+
+
+def _get_ytdlp_binary() -> str:
+    """Return yt-dlp executable, preferring system install."""
+    ytdlp = shutil.which("yt-dlp")
+    if ytdlp:
+        return ytdlp
+    raise RuntimeError(
+        "yt-dlp is required for YouTube URL support. "
+        "Install it with: pip install yt-dlp"
+    )
+
+
+def fetch_youtube_metadata(url: str) -> dict:
+    """Fetch video metadata from a YouTube URL without downloading media.
+
+    Uses yt-dlp in flat/info-only mode. No video or audio bytes are downloaded.
+
+    Args:
+        url: A YouTube video URL (e.g. https://www.youtube.com/watch?v=...).
+
+    Returns:
+        dict with keys: title, duration (float seconds), channel, thumbnail, url.
+
+    Raises:
+        ValueError: If the URL is not a valid or accessible YouTube video.
+        RuntimeError: If yt-dlp is not installed or exits unexpectedly.
+    """
+    ytdlp = _get_ytdlp_binary()
+    cmd = [
+        ytdlp,
+        "--no-playlist",
+        "--skip-download",
+        "--print", "%(title)s\t%(duration)s\t%(channel)s\t%(thumbnail)s",
+        url,
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        stderr_lower = result.stderr.lower()
+        if "private" in stderr_lower or "unavailable" in stderr_lower or "not found" in stderr_lower:
+            raise ValueError(f"YouTube video is unavailable or private: {url}")
+        raise ValueError(
+            f"Could not fetch metadata for URL '{url}'. "
+            f"Ensure the URL is a valid public YouTube video.\nDetails: {result.stderr.strip()}"
+        )
+
+    parts = result.stdout.strip().split("\t")
+    if len(parts) < 2:
+        raise ValueError(f"Unexpected yt-dlp output for URL '{url}': {result.stdout.strip()!r}")
+
+    try:
+        duration = float(parts[1]) if parts[1] not in ("", "NA", "None") else 0.0
+    except ValueError:
+        duration = 0.0
+
+    return {
+        "title": parts[0] if parts[0] else "Untitled",
+        "duration": duration,
+        "channel": parts[2] if len(parts) > 2 else "",
+        "thumbnail": parts[3] if len(parts) > 3 else "",
+        "url": url,
+    }
+
+
+def download_youtube_audio(
+    url: str,
+    output_dir: str,
+    max_duration_sec: float = MAX_VIDEO_DURATION_SEC,
+) -> str:
+    """Download audio from a YouTube URL and normalise to 16kHz mono WAV.
+
+    The video metadata is fetched first to enforce the duration limit without
+    downloading the full media. yt-dlp then extracts the best available audio
+    stream. The resulting file is converted to 16kHz mono WAV via ingest_media().
+
+    Args:
+        url: A YouTube video URL.
+        output_dir: Directory in which to save the downloaded and converted file.
+        max_duration_sec: Maximum allowed duration in seconds (default 600s / 10 min).
+
+    Returns:
+        Absolute path to the normalised 16kHz mono WAV file.
+
+    Raises:
+        ValueError: If the video is unavailable, private, or exceeds the duration limit.
+        RuntimeError: If yt-dlp or ffmpeg fails.
+    """
+    meta = fetch_youtube_metadata(url)
+    if meta["duration"] > max_duration_sec:
+        raise ValueError(
+            f"YouTube video duration ({meta['duration']:.0f}s) exceeds maximum "
+            f"allowed {max_duration_sec:.0f}s (10 minutes)."
+        )
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use a sanitised title as the stem; yt-dlp adds its own extension
+    safe_stem = "".join(c if c.isalnum() or c in " _-" else "_" for c in meta["title"])[:60].strip()
+    template = str(out_dir / f"{safe_stem}.%(ext)s")
+
+    ytdlp = _get_ytdlp_binary()
+    cmd = [
+        ytdlp,
+        "--no-playlist",
+        "-f", "bestaudio/best",
+        "-o", template,
+        url,
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"yt-dlp audio download failed: {result.stderr.strip()}")
+
+    # Locate the downloaded file (yt-dlp chooses the extension)
+    downloaded = sorted(out_dir.glob(f"{safe_stem}.*"))
+    if not downloaded:
+        raise RuntimeError(f"yt-dlp ran successfully but no output file was found in {output_dir}.")
+
+    raw_path = str(downloaded[-1])
+    wav_path = str(out_dir / f"{safe_stem}_16k_mono.wav")
+    return ingest_media(raw_path, output_wav_path=wav_path, max_duration_sec=max_duration_sec)
