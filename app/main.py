@@ -53,7 +53,10 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 ALLOWED_UPLOAD_SUFFIXES = {".mp4", ".mkv", ".webm", ".mp3", ".wav", ".vtt", ".srt"}
 
 for directory in (UPLOAD_DIR, DEMO_DIR, STATIC_DIR):
-    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 JOBS: Dict[str, Dict[str, Any]] = {}
 
