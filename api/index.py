@@ -18,8 +18,8 @@ from app.main import app as _fastapi_app  # noqa: E402
 _PREFIX = "/api/index"
 
 
-class _StripPrefix:
-    """Minimal ASGI middleware that removes a fixed path prefix."""
+class _DebugAndStripPrefix:
+    """Outermost ASGI middleware that logs scope details and normalizes path."""
 
     def __init__(self, inner, prefix: str) -> None:
         self._inner = inner
@@ -27,12 +27,39 @@ class _StripPrefix:
 
     async def __call__(self, scope, receive, send) -> None:
         if scope.get("type") in ("http", "websocket"):
+            headers = dict(scope.get("headers", []))
+            vercel_headers = {
+                k.decode("latin1", errors="replace"): v.decode("latin1", errors="replace")
+                for k, v in headers.items()
+                if k.lower().startswith(b"x-vercel-") or k.lower() == b"x-matched-path"
+            }
+
             path: str = scope.get("path", "")
-            if path.startswith(self._prefix):
-                scope = dict(scope)
-                scope["path"] = path[len(self._prefix):] or "/"
-                scope["raw_path"] = scope["path"].encode()
+            raw_path = scope.get("raw_path")
+            root_path = scope.get("root_path")
+            qs = scope.get("query_string", b"").decode("latin1", errors="replace")
+
+            new_path = path
+            if new_path.startswith(self._prefix):
+                new_path = new_path[len(self._prefix):]
+
+            if not new_path or not new_path.startswith("/"):
+                new_path = "/" + new_path.lstrip("/")
+            if not new_path:
+                new_path = "/"
+
+            scope = dict(scope)
+            scope["path"] = new_path
+            scope["raw_path"] = new_path.encode()
+
+            print(
+                f"[ASGI LOG] orig_path={path!r} -> path={new_path!r} | raw_path={raw_path!r} | "
+                f"root_path={root_path!r} | qs={qs!r} | vercel_headers={vercel_headers}",
+                file=sys.stderr,
+                flush=True,
+            )
+
         await self._inner(scope, receive, send)
 
 
-app = _StripPrefix(_fastapi_app, _PREFIX)
+app = _DebugAndStripPrefix(_fastapi_app, _PREFIX)
