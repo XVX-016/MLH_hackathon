@@ -86,12 +86,13 @@ function initForms() {
       formData.append("url", url);
       formData.append("model", document.getElementById("select-model-file").value);
       var result = await readJson(await fetch("/api/analyze/url", { method: "POST", body: formData }));
-      if (result.job_id) {
+      var jobId = result.job_id;
+      if (jobId) {
         updateProcessingDetails(result.metadata || result);
         await waitForResult(result.job_id);
         result = await readJson(await fetch("/result/" + result.job_id));
       }
-      loadAnalysisData(result, null, youtubeId);
+      loadAnalysisData(result, null, youtubeId, jobId);
     } catch (error) {
       showInputError(error.message);
     } finally {
@@ -112,7 +113,7 @@ function initForms() {
       var job = await readJson(await fetch("/process", { method: "POST", body: formData }));
       await waitForResult(job.job_id);
       var playable = /\.(mp4|mkv|webm|mp3|wav)$/i.test(file.name);
-      loadAnalysisData(await readJson(await fetch("/result/" + job.job_id)), playable ? URL.createObjectURL(file) : null);
+      loadAnalysisData(await readJson(await fetch("/result/" + job.job_id)), playable ? URL.createObjectURL(file) : null, null, job.job_id);
     } catch (error) {
       showInputError("Processing failed: " + error.message);
     } finally {
@@ -226,9 +227,10 @@ function toggleLoading(loading, text, metadata) {
 }
 
 
-function loadAnalysisData(data, videoUrl, youtubeId) {
+function loadAnalysisData(data, videoUrl, youtubeId, jobId) {
   currentAnalysis = data;
-  currentJobId = data.video_id;
+  // /ask looks jobs up by job id; only the demo's job id equals its video_id.
+  currentJobId = jobId || data.video_id;
   if (currentVideoUrl) URL.revokeObjectURL(currentVideoUrl);
   currentVideoUrl = videoUrl || null;
   currentYoutubeId = youtubeId || null;
