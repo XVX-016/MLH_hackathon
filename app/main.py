@@ -15,10 +15,20 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from videograph.chunk import chunk_transcript
-from videograph.extract import extract_full_graph, generate_chapters_and_summary
+from videograph.extract import (
+    extract_full_graph,
+    generate_chapters_and_summary,
+    generate_flashcards,
+)
 from videograph.grounding import filter_graph
 from videograph.graph import to_vis_network_data
-from videograph.ingest import MAX_VIDEO_DURATION_SEC, get_media_duration, ingest_media
+from videograph.ingest import (
+    MAX_VIDEO_DURATION_SEC,
+    download_youtube_audio,
+    fetch_youtube_metadata,
+    get_media_duration,
+    ingest_media,
+)
 from videograph.qa import answer_question
 from videograph.resolve import resolve_knowledge_graph
 from videograph.schemas import QAResponse, VideoAnalysisResult
@@ -50,6 +60,11 @@ class LegacyAskRequest(BaseModel):
 
     video_id: str
     question: str = Field(min_length=1)
+    model: str = "gemma-4-it"
+
+
+class UrlProcessRequest(BaseModel):
+    url: str = Field(min_length=1, description="YouTube or media URL")
     model: str = "gemma-4-it"
 
 
@@ -156,6 +171,7 @@ def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
         graph = resolve_knowledge_graph(raw_graph)
         graph, _ = filter_graph(graph, segments)
         summary, chapters = generate_chapters_and_summary(chunks, graph=graph, model=model)
+        flashcards = generate_flashcards(chunks, model=model)
         JOBS[job_id] = {
             "status": "completed",
             "result": VideoAnalysisResult(
@@ -165,12 +181,49 @@ def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
                 summary=summary,
                 transcript=segments,
                 chapters=chapters,
+                flashcards=flashcards,
                 graph=graph,
             ),
             "demo": False,
         }
     except Exception as error:
         logger.exception("Job %s failed", job_id)
+        JOBS[job_id] = {"status": "failed", "error": str(error), "demo": False}
+
+
+def _process_youtube_url(job_id: str, url: str, model: str) -> None:
+    """Run pipeline for a YouTube video in background."""
+    JOBS[job_id]["status"] = "processing"
+    try:
+        meta = fetch_youtube_metadata(url)
+        title = meta.get("title", "YouTube Analysis")
+        wav_path = download_youtube_audio(url, output_dir=str(UPLOAD_DIR))
+        duration = meta.get("duration", 0.0) or get_media_duration(wav_path)
+        if duration > MAX_VIDEO_DURATION_SEC:
+            raise ValueError(f"Video duration ({duration:.1f}s) exceeds {MAX_VIDEO_DURATION_SEC:.0f}s limit")
+        segments = transcribe(wav_path)
+        chunks = chunk_transcript(segments)
+        raw_graph = extract_full_graph(chunks, segments, model=model)
+        graph = resolve_knowledge_graph(raw_graph)
+        graph, _ = filter_graph(graph, segments)
+        summary, chapters = generate_chapters_and_summary(chunks, graph=graph, model=model)
+        flashcards = generate_flashcards(chunks, model=model)
+        JOBS[job_id] = {
+            "status": "completed",
+            "result": VideoAnalysisResult(
+                video_id=job_id,
+                title=title,
+                duration=duration,
+                summary=summary,
+                transcript=segments,
+                chapters=chapters,
+                flashcards=flashcards,
+                graph=graph,
+            ),
+            "demo": False,
+        }
+    except Exception as error:
+        logger.exception("YouTube job %s failed", job_id)
         JOBS[job_id] = {"status": "failed", "error": str(error), "demo": False}
 
 
@@ -273,9 +326,52 @@ async def dashboard_upload(file: UploadFile = File(...), model: str = Form("gemm
     return _result_payload(job)
 
 
+@app.post("/api/youtube/metadata")
+def youtube_metadata(request: UrlProcessRequest) -> Dict[str, Any]:
+    """Fetch video title, duration, channel, and thumbnail without downloading media."""
+    try:
+        return fetch_youtube_metadata(request.url)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/process/url", status_code=202)
+async def process_url(
+    background_tasks: BackgroundTasks,
+    request: UrlProcessRequest,
+) -> Dict[str, str]:
+    """Fetch metadata and enqueue YouTube URL analysis."""
+    try:
+        meta = fetch_youtube_metadata(request.url)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    duration = meta.get("duration", 0.0)
+    if duration > MAX_VIDEO_DURATION_SEC:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Video duration ({duration:.1f}s) exceeds {MAX_VIDEO_DURATION_SEC:.0f}s limit",
+        )
+
+    job_id = uuid.uuid4().hex
+    JOBS[job_id] = {
+        "status": "queued",
+        "demo": False,
+        "title": meta.get("title", "YouTube Analysis"),
+        "thumbnail": meta.get("thumbnail", ""),
+    }
+    background_tasks.add_task(_process_youtube_url, job_id, request.url, request.model)
+    return {"job_id": job_id, "status": "queued"}
+
+
 @app.post("/api/analyze/url")
-def dashboard_url() -> None:
-    raise HTTPException(
-        status_code=501,
-        detail="URL ingestion is not available yet. Download the permitted media or subtitles and upload it instead.",
-    )
+async def dashboard_url(
+    background_tasks: BackgroundTasks,
+    url: str = Form(None),
+    model: str = Form("gemma-4-it"),
+) -> Dict[str, Any]:
+    """Dashboard endpoint for YouTube URL processing."""
+    if not url:
+        raise HTTPException(status_code=422, detail="Missing required 'url' parameter")
+    req = UrlProcessRequest(url=url, model=model)
+    return await process_url(background_tasks, req)
