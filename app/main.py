@@ -107,6 +107,9 @@ async def lifespan(app: FastAPI):
     _read_demo_results()
     yield
 
+# Also invoke at import time for serverless runtimes that don't invoke ASGI lifespan
+_read_demo_results()
+
 
 app = FastAPI(title="seekwise", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
