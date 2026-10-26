@@ -51,10 +51,11 @@
 
     <div id="results" class="results-view" hidden>
     <section class="card glassmorphism video-info-card" aria-labelledby="video-title">
+      <p class="section-eyebrow">YOUR STUDY SPACE</p>
       <div class="card-header"><h2 id="video-title" class="video-title">Select or upload a video to begin</h2><span id="video-duration-badge" class="badge">00:00</span></div>
       <video id="video-player" class="video-player hidden" controls preload="metadata" aria-label="Video player"></video>
       <iframe id="youtube-player" class="video-player hidden" title="YouTube video player" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-      <p id="video-player-placeholder" class="placeholder-text">Load a result to explore timestamped evidence. Upload media to enable playback.</p>
+      <div id="video-player-placeholder" class="media-empty"><p>Playback is unavailable for this result. Explore its timestamped transcript instead.</p><button id="btn-view-transcript" class="btn btn-secondary" type="button">Browse transcript <span aria-hidden="true">↗</span></button></div>
     </section>
 
     <div class="study-tabs" role="tablist" aria-label="Study views">
@@ -64,7 +65,7 @@
     </div>
 
     <section id="panel-summary" class="study-panel summary-grid" role="tabpanel" aria-labelledby="tab-summary">
-      <div class="card glassmorphism"><h3>Executive Summary</h3><p id="video-summary" class="summary-text">No summary loaded yet.</p></div>
+      <div class="card glassmorphism"><div class="card-header"><h3>Executive Summary</h3><button id="btn-copy-summary" class="btn btn-quiet" type="button" aria-live="polite">Copy summary</button></div><p id="video-summary" class="summary-text">No summary loaded yet.</p></div>
       <div class="card glassmorphism"><div class="card-header"><h3>Video Chapters</h3><span class="badge" id="chapters-count">0 Chapters</span></div><div id="chapters-list" class="chapters-container"><p class="placeholder-text">Chapters will appear here after processing.</p></div></div>
     </section>
 
@@ -77,6 +78,7 @@
     <section id="panel-graph" class="study-panel card glassmorphism graph-card" role="tabpanel" aria-labelledby="tab-graph" hidden>
       <div class="card-header graph-header"><div class="graph-title-group"><h3>Knowledge Graph</h3><p class="graph-subtitle">Click an edge for evidence or a node for transcript mentions.</p></div><div class="graph-stats-pills"><span class="pill" id="stat-nodes">0 Nodes</span><span class="pill" id="stat-edges">0 Grounded Edges</span></div></div>
       <div id="graph-network-container" class="graph-canvas-wrapper"><div id="graph-network" class="graph-canvas"></div></div>
+      <div id="graph-evidence-list" class="graph-evidence-list" aria-label="Graph relationships"></div>
       <div id="edge-evidence-drawer" class="evidence-drawer hidden"><div class="drawer-header"><div class="evidence-tag"><span class="pulse-dot"></span><strong>Evidence Inspector</strong></div><button id="btn-close-drawer" class="btn-icon" type="button" aria-label="Close evidence inspector">×</button></div><div class="drawer-content"><div class="edge-relation-label" id="inspector-relation">RELATION</div><blockquote id="inspector-quote" class="evidence-quote">Select a graph item.</blockquote><div class="evidence-meta"><span class="meta-item">Timestamp: <button id="inspector-timestamp" class="citation-pill" type="button" disabled>00:00</button></span><span class="meta-item">Confidence: <b id="inspector-confidence">100%</b></span></div><div id="inspector-mentions" class="node-mentions hidden"></div></div></div>
     </section>
 

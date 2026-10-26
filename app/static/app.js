@@ -9,6 +9,20 @@ document.addEventListener("DOMContentLoaded", function () {
   initForms();
   document.getElementById("btn-load-sample").addEventListener("click", loadDemo);
   document.getElementById("btn-new-video").addEventListener("click", resetToHero);
+  document.getElementById("btn-view-transcript").addEventListener("click", function () {
+    document.getElementById("transcript-title").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("transcript-search").focus({ preventScroll: true });
+  });
+  document.getElementById("btn-copy-summary").addEventListener("click", async function (event) {
+    var button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(currentAnalysis.summary || "");
+      button.textContent = "Copied";
+    } catch (_) {
+      button.textContent = "Copy failed";
+    }
+    setTimeout(function () { button.textContent = "Copy summary"; }, 2000);
+  });
   document.getElementById("btn-upload").addEventListener("click", function () {
     document.getElementById("input-file").click();
   });
@@ -214,13 +228,15 @@ function loadAnalysisData(data, videoUrl, youtubeId) {
   document.getElementById("video-title").textContent = data.title || "Untitled Video";
   document.getElementById("video-duration-badge").textContent = formatTime(data.duration);
   document.getElementById("video-summary").textContent = data.summary || "No summary provided.";
+  document.getElementById("btn-copy-summary").disabled = !data.summary;
+  document.getElementById("transcript-search").value = "";
   renderChapters(data.chapters || []);
   renderFlashcards(data.flashcards || [], data.transcript || []);
   renderTranscript(data.transcript || []);
   document.getElementById("qa-chat-history").replaceChildren();
   appendChatMessage("system", "Ask a question about this video.");
   closeEvidenceDrawer();
-  if (!document.getElementById("panel-graph").hidden) renderKnowledgeGraph(data.graph || { nodes: [], edges: [] });
+  selectTab(document.getElementById("tab-summary"));
   document.getElementById("hero").hidden = true;
   document.getElementById("results").hidden = false;
   document.getElementById("btn-new-video").hidden = false;
@@ -242,6 +258,7 @@ function resetToHero() {
   currentJobId = null;
   currentAnalysis = null;
   showInputError("");
+  document.getElementById("input-url").value = "";
   document.getElementById("input-file").value = "";
   document.getElementById("results").hidden = true;
   document.getElementById("hero").hidden = false;
@@ -360,6 +377,22 @@ function renderKnowledgeGraph(graphData) {
   var groundedEdges = graphData.edges.filter(function (edge) { return edge.grounded; });
   document.getElementById("stat-nodes").textContent = graphData.nodes.length + " Nodes";
   document.getElementById("stat-edges").textContent = groundedEdges.length + " Grounded Edges";
+  var edgeList = document.getElementById("graph-evidence-list");
+  edgeList.replaceChildren();
+  var labels = new Map(graphData.nodes.map(function (node) { return [node.id, node.label]; }));
+  groundedEdges.forEach(function (edge) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "graph-relation";
+    var relation = document.createElement("span");
+    relation.textContent = (labels.get(edge.source) || edge.source) + " → " + edge.relation.replaceAll("_", " ").toLowerCase() + " → " + (labels.get(edge.target) || edge.target);
+    var time = document.createElement("span");
+    time.className = "chapter-time";
+    time.textContent = "[" + formatTime(edge.start_time) + "]";
+    button.append(relation, time);
+    button.addEventListener("click", function () { showEvidenceDrawer(edge); });
+    edgeList.appendChild(button);
+  });
   if (!window.vis) {
     container.replaceChildren();
     var fallback = document.createElement("div");
@@ -371,13 +404,6 @@ function renderKnowledgeGraph(graphData) {
       button.addEventListener("click", function () { showNodeMentions(node); });
       fallback.appendChild(button);
     });
-    groundedEdges.forEach(function (edge) {
-      var button = document.createElement("button");
-      button.type = "button";
-      button.textContent = edge.source + " → " + edge.relation + " → " + edge.target + " [" + formatTime(edge.start_time) + "]";
-      button.addEventListener("click", function () { showEvidenceDrawer(edge); });
-      fallback.appendChild(button);
-    });
     container.appendChild(fallback);
     return;
   }
@@ -385,7 +411,7 @@ function renderKnowledgeGraph(graphData) {
     return Object.assign({}, node, { title: node.label, group: node.type, mentions: node.mentions || [] });
   });
   var edges = groundedEdges.map(function (edge, index) {
-    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, label: window.innerWidth < 600 ? "" : edge.relation, arrows: "to", timestamp_str: formatTime(edge.start_time) });
+    return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, title: edge.relation.replaceAll("_", " "), arrows: "to", timestamp_str: formatTime(edge.start_time) });
   });
   var data = { nodes: new window.vis.DataSet(nodes), edges: new window.vis.DataSet(edges) };
   if (visNetworkInstance) visNetworkInstance.destroy();
