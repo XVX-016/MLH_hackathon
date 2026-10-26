@@ -187,11 +187,29 @@ def _process_upload(job_id: str, path: Path, title: str, model: str) -> None:
             segments = transcribe(audio_path)
 
         chunks = chunk_transcript(segments)
-        raw_graph = extract_full_graph(chunks, segments, model=model)
-        graph = resolve_knowledge_graph(raw_graph)
-        graph, _ = filter_graph(graph, segments)
-        summary, chapters = generate_chapters_and_summary(chunks, graph=graph, model=model)
-        flashcards = generate_flashcards(chunks, model=model)
+        try:
+            raw_graph = extract_full_graph(chunks, segments, model=model)
+            graph = resolve_knowledge_graph(raw_graph)
+            graph, _ = filter_graph(graph, segments)
+        except Exception as e:
+            logger.warning("Graph extraction failed, using empty graph: %s", e)
+            from videograph.schemas import KnowledgeGraph
+            graph = KnowledgeGraph(nodes=[], edges=[])
+
+        try:
+            summary, chapters = generate_chapters_and_summary(chunks, graph=graph, model=model)
+        except Exception as e:
+            logger.warning("Summary generation failed: %s", e)
+            from videograph.extract import _fallback_time_chapters
+            chapters = _fallback_time_chapters(chunks)
+            summary = f"Summary for {title}. Extracted {len(segments)} transcript segments."
+
+        try:
+            flashcards = generate_flashcards(chunks, model=model)
+        except Exception as e:
+            logger.warning("Flashcards generation failed: %s", e)
+            flashcards = []
+
         JOBS[job_id] = {
             "status": "completed",
             "result": VideoAnalysisResult(
@@ -258,11 +276,29 @@ def _process_youtube_url(job_id: str, url: str, model: str) -> None:
             raise ValueError(f"Video duration ({duration:.1f}s) exceeds {MAX_VIDEO_DURATION_SEC:.0f}s ({mins} min) limit")
 
         chunks = chunk_transcript(segments)
-        raw_graph = extract_full_graph(chunks, segments, model=model)
-        graph = resolve_knowledge_graph(raw_graph)
-        graph, _ = filter_graph(graph, segments)
-        summary, chapters = generate_chapters_and_summary(chunks, graph=graph, model=model)
-        flashcards = generate_flashcards(chunks, model=model)
+        try:
+            raw_graph = extract_full_graph(chunks, segments, model=model)
+            graph = resolve_knowledge_graph(raw_graph)
+            graph, _ = filter_graph(graph, segments)
+        except Exception as e:
+            logger.warning("Graph extraction failed, using empty graph: %s", e)
+            from videograph.schemas import KnowledgeGraph
+            graph = KnowledgeGraph(nodes=[], edges=[])
+
+        try:
+            summary, chapters = generate_chapters_and_summary(chunks, graph=graph, model=model)
+        except Exception as e:
+            logger.warning("Summary generation failed: %s", e)
+            from videograph.extract import _fallback_time_chapters
+            chapters = _fallback_time_chapters(chunks)
+            summary = f"Summary for {title}. Extracted {len(segments)} transcript segments."
+
+        try:
+            flashcards = generate_flashcards(chunks, model=model)
+        except Exception as e:
+            logger.warning("Flashcards generation failed: %s", e)
+            flashcards = []
+
         JOBS[job_id] = {
             "status": "completed",
             "result": VideoAnalysisResult(

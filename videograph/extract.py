@@ -230,7 +230,7 @@ def generate_chapters_and_summary(
     try:
         chapters_output = llm_call(CHAPTERS_PROMPT.format(chunk_gists=gist_text), ChaptersOutput, model=model)
         chapters = _snap_chapter_starts(chapters_output.chapters, chunks)
-    except (ValueError, TypeError, ValidationError) as error:
+    except Exception as error:
         logger.warning("Invalid chapter output; using evenly spaced chapters: %s", error)
         chapters = _fallback_time_chapters(chunks, chunk_entities)
 
@@ -242,7 +242,7 @@ def generate_chapters_and_summary(
             SUMMARY_PROMPT.format(chapters=chapter_text, chunk_gists=gist_text), SummaryOutput, model=model
         )
         summary = summary_output.summary
-    except (ValueError, TypeError) as error:
+    except Exception as error:
         logger.warning("Invalid summary output; using gists: %s", error)
         summary = " ".join(gists)
     return summary, chapters
@@ -276,7 +276,12 @@ def generate_flashcards(
         return []
 
     all_cards: List[Flashcard] = []
-    for chunk in chunks:
+    target_chunks = chunks
+    if len(chunks) > 5:
+        step = max(1, len(chunks) // 5)
+        target_chunks = chunks[::step][:5]
+
+    for chunk in target_chunks:
         prompt = FLASHCARDS_PROMPT.format(
             chunk_start=chunk.start,
             chunk_end=chunk.end,
@@ -285,7 +290,7 @@ def generate_flashcards(
         try:
             output = llm_call(prompt, FlashcardsOutput, model=model)
             all_cards.extend(output.flashcards)
-        except (ValueError, TypeError, ValidationError) as error:
+        except Exception as error:
             logger.warning(
                 "Skipping flashcard extraction for chunk %s: %s", chunk.chunk_id, error
             )
@@ -344,13 +349,23 @@ def extract_full_graph(
     all_segments: List[TranscriptSegment],
     model: str = "gemma-4-it",
 ) -> KnowledgeGraph:
-    """Run extraction across all chunks and compile raw graph."""
+    """Run extraction across sampled chunks and compile raw graph."""
     all_nodes: List[KnowledgeNode] = []
     all_edges: List[KnowledgeEdge] = []
 
-    for chunk in chunks:
-        chunk_result = extract_graph_from_chunk(chunk, all_segments, model=model)
-        all_nodes.extend(chunk_result.nodes)
-        all_edges.extend(chunk_result.edges)
+    target_chunks = chunks
+    if len(chunks) > 5:
+        step = max(1, len(chunks) // 5)
+        target_chunks = chunks[::step][:5]
+
+    for chunk in target_chunks:
+        try:
+            chunk_result = extract_graph_from_chunk(chunk, all_segments, model=model)
+            all_nodes.extend(chunk_result.nodes)
+            all_edges.extend(chunk_result.edges)
+        except Exception as error:
+            logger.warning("Failed graph extraction for chunk %s: %s", chunk.chunk_id, error)
+            if all_nodes or all_edges:
+                break
 
     return KnowledgeGraph(nodes=all_nodes, edges=all_edges)
