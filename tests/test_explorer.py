@@ -129,3 +129,14 @@ def test_flashcard_deck_graph_panel_and_no_qa_badge() -> None:
     assert "Verified citations" not in html
     assert "function showDeckCard" in javascript and "function shuffleDeck" in javascript
     assert "function focusOn" in javascript
+
+
+def test_review_pass_deck_grading_qa_drawer_and_graph_toggle() -> None:
+    javascript = Path("app/static/app.js").read_text(encoding="utf-8")
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    for element in ("deck-know", "deck-again", "deck-score", "deck-review-missed", "deck-progress-fill",
+                    "qa-drawer", "btn-ask", "btn-close-qa", "graph-show-all"):
+        assert f'id="{element}"' in html
+    assert "function gradeDeckCard" in javascript and "function toggleQaDrawer" in javascript
+    # Evidence strength is shown as neutral text, never colour-coded.
+    assert "is-weak" not in javascript and "is-mixed" not in javascript

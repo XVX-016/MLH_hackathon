@@ -46,6 +46,18 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("deck-prev").addEventListener("click", function () { showDeckCard(deckIndex - 1); });
   document.getElementById("deck-next").addEventListener("click", function () { showDeckCard(deckIndex + 1); });
   document.getElementById("deck-shuffle").addEventListener("click", shuffleDeck);
+  document.getElementById("deck-know").addEventListener("click", function () { gradeDeckCard(true); });
+  document.getElementById("deck-again").addEventListener("click", function () { gradeDeckCard(false); });
+  document.getElementById("deck-review-missed").addEventListener("click", function () { startDeck(Array.from(deckMissed)); deckMissed = new Set(); });
+  document.getElementById("deck-restart").addEventListener("click", function () {
+    deckKnown = new Set(); deckMissed = new Set();
+    startDeck(deckElements.map(function (_, index) { return index; }));
+  });
+  document.getElementById("btn-ask").addEventListener("click", function () { toggleQaDrawer(); });
+  document.getElementById("btn-close-qa").addEventListener("click", function () { toggleQaDrawer(false); });
+  document.getElementById("graph-show-all").addEventListener("change", function () {
+    if (currentAnalysis) renderKnowledgeGraph(currentAnalysis.graph || { nodes: [], edges: [] });
+  });
   var deck = document.getElementById("flashcards-list");
   var swipeStart = null;
   deck.addEventListener("pointerdown", function (event) { swipeStart = event.clientX; });
@@ -68,14 +80,20 @@ document.addEventListener("DOMContentLoaded", function () {
   // Shortcuts: 1/2/3 switch pages, / focuses Q&A, Esc closes the inspector.
   document.addEventListener("keydown", function (event) {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.key === "Escape") { closeEvidenceDrawer(); return; }
+    if (event.key === "Escape") { closeEvidenceDrawer(); toggleQaDrawer(false); return; }
     var target = event.target;
     if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
     if (document.getElementById("results").hidden) return;
-    if (!document.getElementById("panel-flashcards").hidden && !target.classList.contains("study-tab") &&
-        (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+    var deckOpen = !document.getElementById("panel-flashcards").hidden && document.getElementById("deck-summary").hidden;
+    if (deckOpen && !target.classList.contains("study-tab") && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       showDeckCard(deckIndex + (event.key === "ArrowRight" ? 1 : -1));
+      return;
+    }
+    // Space/Enter flip the card unless focus is already on a button (which handles it natively).
+    if (deckOpen && (event.key === " " || event.key === "Enter") && target.tagName !== "BUTTON") {
+      event.preventDefault();
+      flipDeckCard(deckSession[deckIndex]);
       return;
     }
     var tabs = { "1": "tab-summary", "2": "tab-flashcards", "3": "tab-graph" };
@@ -84,7 +102,7 @@ document.addEventListener("DOMContentLoaded", function () {
       selectTab(document.getElementById(tabs[event.key]));
     } else if (event.key === "/") {
       event.preventDefault();
-      document.getElementById("qa-input").focus();
+      toggleQaDrawer(true);
     }
   });
   if (parseRoute().jobId) applyRoute();
@@ -354,6 +372,7 @@ function loadAnalysisData(data, videoUrl, youtubeId, jobId) {
   document.getElementById("results").hidden = false;
   document.getElementById("btn-new-video").hidden = false;
   document.getElementById("btn-copy-link").hidden = false;
+  document.getElementById("btn-ask").hidden = false;
   window.scrollTo(0, 0);
 }
 
@@ -378,6 +397,8 @@ function resetToHero() {
   document.getElementById("hero").hidden = false;
   document.getElementById("btn-new-video").hidden = true;
   document.getElementById("btn-copy-link").hidden = true;
+  document.getElementById("btn-ask").hidden = true;
+  toggleQaDrawer(false);
   document.getElementById("input-url").focus();
   if (location.hash.length > 2) history.pushState(null, "", "#/");
   document.title = "seekwise - find the moments that matter";
@@ -407,14 +428,13 @@ function renderBrief(data) {
   var takeaways = verifiedFlashcards(data.flashcards || [], data.transcript || []);
   var grounding = data.grounding || {};
   var total = grounding.total_edges || 0;
-  var rate = total ? grounding.grounded_edges / total : null;
   var glance = document.getElementById("brief-glance");
   glance.replaceChildren();
   [
     ["Runtime", formatTime(data.duration)],
     ["Chapters", String((data.chapters || []).length)],
     ["Verified takeaways", String(takeaways.length)],
-    ["Evidence", total ? grounding.grounded_edges + "/" + total + " grounded" : "No claims", rate == null ? "" : rate >= 0.9 ? "is-strong" : rate >= 0.6 ? "is-mixed" : "is-weak"]
+    ["Evidence", total ? grounding.grounded_edges + "/" + total + " claims grounded" : "No claims"]
   ].forEach(function (item) {
     var wrap = document.createElement("div");
     if (item[2]) wrap.className = item[2];
@@ -426,7 +446,7 @@ function renderBrief(data) {
     glance.appendChild(wrap);
   });
 
-  // Core concepts: entities with the most grounded relationships.
+  // Topics: entities with the most grounded relationships.
   var graph = data.graph || { nodes: [], edges: [] };
   var degree = {};
   graph.edges.filter(function (edge) { return edge.grounded !== false; }).forEach(function (edge) {
@@ -488,77 +508,111 @@ function briefAsText(data) {
   return lines.join("\n");
 }
 
-// Flashcard deck: one card in front, the next two stacked behind it.
-var deckCards = [];
-var deckIndex = 0;
+// Flashcard deck: one card at a time, graded "Got it" / "Review again".
+var deckElements = [];   // one <article> per verified card, in data order
+var deckSession = [];    // indices into deckElements for the current pass
+var deckIndex = 0;       // position within deckSession
+var deckKnown = new Set();
+var deckMissed = new Set();
 
 function renderFlashcards(cards, segments) {
-  deckCards = verifiedFlashcards(cards, segments);
-  deckIndex = 0;
+  var verified = verifiedFlashcards(cards, segments);
   var container = document.getElementById("flashcards-list");
-  document.getElementById("flashcards-count").textContent = deckCards.length + (deckCards.length === 1 ? " Card" : " Cards");
+  document.getElementById("flashcards-count").textContent = verified.length + (verified.length === 1 ? " Card" : " Cards");
   container.replaceChildren();
-  var dots = document.getElementById("deck-dots");
-  dots.replaceChildren();
-  document.querySelector(".deck-controls").hidden = !deckCards.length;
-  if (!deckCards.length) {
+  deckElements = [];
+  deckKnown = new Set();
+  deckMissed = new Set();
+  document.querySelector(".deck-controls").hidden = !verified.length;
+  document.getElementById("deck-summary").hidden = true;
+  if (!verified.length) {
     container.innerHTML = "<p class='placeholder-text'>No flashcards with verbatim transcript evidence are available.</p>";
     document.getElementById("deck-progress").textContent = "0 / 0";
+    document.getElementById("deck-progress-fill").style.width = "0";
+    document.getElementById("deck-grade").hidden = true;
     return;
   }
-  deckCards.forEach(function (card, index) {
+  verified.forEach(function (card, index) {
     var item = document.createElement("article");
     item.className = "flashcard";
     item.innerHTML = "<button type='button' class='flashcard-flip' aria-pressed='false'><span class='flashcard-inner'>" +
-      "<span class='flashcard-face flashcard-front'><span class='flashcard-label'></span><span class='flashcard-question'></span><span class='flashcard-cue'>Tap to reveal the answer</span></span>" +
+      "<span class='flashcard-face flashcard-front'><span class='flashcard-label'>Question</span><span class='flashcard-question'></span><span class='flashcard-cue'>Space to flip</span></span>" +
       "<span class='flashcard-face flashcard-back'><span class='flashcard-label'>Answer</span><strong class='flashcard-answer'></strong><q class='flashcard-quote'></q></span>" +
       "</span></button><button type='button' class='citation-pill flashcard-jump'></button>";
-    item.querySelector(".flashcard-front .flashcard-label").textContent = "Question " + String(index + 1).padStart(2, "0");
     item.querySelector(".flashcard-question").textContent = card.question;
     item.querySelector(".flashcard-answer").textContent = card.answer;
     item.querySelector(".flashcard-quote").textContent = card.key_quote || "No supporting quote provided.";
-    var flip = item.querySelector(".flashcard-flip");
-    flip.setAttribute("aria-label", "Reveal answer: " + card.question);
-    flip.addEventListener("click", function () {
-      if (Number(item.dataset.offset) !== 0) { showDeckCard(index); return; }
-      var flipped = item.classList.toggle("flipped");
-      flip.setAttribute("aria-pressed", String(flipped));
-      flip.setAttribute("aria-label", (flipped ? "Show question: " : "Reveal answer: ") + card.question);
-    });
+    item.querySelector(".flashcard-flip").addEventListener("click", function () { flipDeckCard(index); });
     var jump = item.querySelector(".flashcard-jump");
-    jump.textContent = formatTime(card.start_sec) + " · Jump to evidence";
+    jump.textContent = "Jump to moment [" + formatTime(card.start_sec) + "]";
     jump.addEventListener("click", function () { seekVideo(card.start_sec); });
+    item.dataset.question = card.question;
     container.appendChild(item);
-    var dot = document.createElement("span");
-    dots.appendChild(dot);
+    deckElements.push(item);
   });
+  startDeck(deckElements.map(function (_, index) { return index; }));
+}
+
+function startDeck(session) {
+  deckSession = session;
+  document.getElementById("deck-summary").hidden = true;
+  document.querySelector(".deck-controls").hidden = false;
   showDeckCard(0);
 }
 
-function showDeckCard(index) {
-  var items = Array.from(document.querySelectorAll("#flashcards-list .flashcard"));
-  if (!items.length) return;
-  deckIndex = (index + items.length) % items.length;
-  items.forEach(function (item, position) {
-    var offset = position - deckIndex;
-    item.dataset.offset = String(Math.max(-1, Math.min(offset, 3)));
+function flipDeckCard(index) {
+  var item = deckElements[index];
+  if (!item || deckSession[deckIndex] !== index) return;
+  var flipped = item.classList.toggle("flipped");
+  var flip = item.querySelector(".flashcard-flip");
+  flip.setAttribute("aria-pressed", String(flipped));
+  flip.setAttribute("aria-label", (flipped ? "Show question: " : "Reveal answer: ") + item.dataset.question);
+  document.getElementById("deck-grade").hidden = !flipped;
+}
+
+function showDeckCard(position) {
+  if (!deckSession.length) return;
+  deckIndex = Math.max(0, Math.min(position, deckSession.length - 1));
+  var total = deckSession.length;
+  deckElements.forEach(function (item, index) {
+    var offset = deckSession.indexOf(index) - deckIndex;
+    item.dataset.offset = deckSession.indexOf(index) === -1 ? "out" : String(Math.max(-1, Math.min(offset, 3)));
     item.setAttribute("aria-hidden", String(offset !== 0));
     item.querySelectorAll("button").forEach(function (button) { button.tabIndex = offset === 0 ? 0 : -1; });
     if (offset !== 0) item.classList.remove("flipped");
+    var flip = item.querySelector(".flashcard-flip");
+    flip.setAttribute("aria-pressed", "false");
+    flip.setAttribute("aria-label", "Reveal answer: " + item.dataset.question);
   });
-  document.querySelectorAll("#deck-dots span").forEach(function (dot, position) { dot.classList.toggle("active", position === deckIndex); });
-  document.getElementById("deck-progress").textContent = (deckIndex + 1) + " / " + items.length;
+  document.getElementById("deck-grade").hidden = true;
+  document.getElementById("deck-prev").disabled = deckIndex === 0;
+  document.getElementById("deck-next").disabled = deckIndex === total - 1;
+  document.getElementById("deck-progress").textContent = "Card " + (deckIndex + 1) + " of " + total;
+  document.getElementById("deck-progress-fill").style.width = ((deckIndex + 1) / total * 100) + "%";
+}
+
+function gradeDeckCard(knewIt) {
+  var index = deckSession[deckIndex];
+  if (knewIt) { deckKnown.add(index); deckMissed.delete(index); }
+  else { deckMissed.add(index); deckKnown.delete(index); }
+  if (deckIndex < deckSession.length - 1) { showDeckCard(deckIndex + 1); return; }
+  // End of the pass: show the score.
+  deckElements.forEach(function (item) { item.dataset.offset = "out"; });
+  document.getElementById("deck-grade").hidden = true;
+  document.querySelector(".deck-controls").hidden = true;
+  document.getElementById("deck-summary").hidden = false;
+  document.getElementById("deck-score").textContent = "You knew " + deckKnown.size + " of " + deckElements.length + ".";
+  document.getElementById("deck-review-missed").hidden = !deckMissed.size;
+  document.getElementById("deck-progress").textContent = "Done";
 }
 
 function shuffleDeck() {
-  var container = document.getElementById("flashcards-list");
-  var items = Array.from(container.querySelectorAll(".flashcard"));
-  for (var i = items.length - 1; i > 0; i--) {
+  var order = deckSession.slice();
+  for (var i = order.length - 1; i > 0; i--) {
     var j = Math.floor(Math.random() * (i + 1));
-    var swap = items[i]; items[i] = items[j]; items[j] = swap;
+    var swap = order[i]; order[i] = order[j]; order[j] = swap;
   }
-  items.forEach(function (item) { container.appendChild(item); });
-  showDeckCard(0);
+  startDeck(order);
 }
 
 function renderChapters(chapters) {
@@ -658,23 +712,43 @@ function scrollToTranscriptTime(seconds) {
 function renderKnowledgeGraph(graphData) {
   var container = document.getElementById("graph-network");
   var groundedEdges = graphData.edges.filter(function (edge) { return edge.grounded; });
+  // Isolated entities float unlabeled and add noise; hide them unless asked.
+  var linked = new Set();
+  groundedEdges.forEach(function (edge) { linked.add(edge.source); linked.add(edge.target); });
+  var showAll = document.getElementById("graph-show-all").checked;
+  var hiddenCount = graphData.nodes.filter(function (node) { return !linked.has(node.id); }).length;
+  document.querySelector(".graph-toggle").hidden = !hiddenCount;
+  graphData = { nodes: graphData.nodes.filter(function (node) { return showAll || linked.has(node.id); }), edges: graphData.edges };
   document.getElementById("stat-nodes").textContent = graphData.nodes.length + (graphData.nodes.length === 1 ? " concept" : " concepts");
   document.getElementById("stat-edges").textContent = groundedEdges.length + (groundedEdges.length === 1 ? " connection" : " connections");
   var edgeList = document.getElementById("graph-evidence-list");
   edgeList.replaceChildren();
   var labels = new Map(graphData.nodes.map(function (node) { return [node.id, node.label]; }));
-  groundedEdges.forEach(function (edge) {
-    var button = document.createElement("button");
-    button.type = "button";
-    button.className = "graph-relation";
-    var relation = document.createElement("span");
-    relation.textContent = (labels.get(edge.source) || edge.source) + " → " + edge.relation.replaceAll("_", " ").toLowerCase() + " → " + (labels.get(edge.target) || edge.target);
-    var time = document.createElement("span");
-    time.className = "chapter-time";
-    time.textContent = "[" + formatTime(edge.start_time) + "]";
-    button.append(relation, time);
-    button.addEventListener("click", function () { showEvidenceDrawer(edge); });
-    edgeList.appendChild(button);
+  var bySubject = new Map();
+  groundedEdges.slice().sort(function (a, b) { return a.start_time - b.start_time; }).forEach(function (edge) {
+    if (!bySubject.has(edge.source)) bySubject.set(edge.source, []);
+    bySubject.get(edge.source).push(edge);
+  });
+  bySubject.forEach(function (edges, subject) {
+    var group = document.createElement("div");
+    group.className = "relation-group";
+    var heading = document.createElement("h5");
+    heading.textContent = labels.get(subject) || subject;
+    group.appendChild(heading);
+    edges.forEach(function (edge) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "graph-relation";
+      var time = document.createElement("span");
+      time.className = "chapter-time";
+      time.textContent = "[" + formatTime(edge.start_time) + "]";
+      var relation = document.createElement("span");
+      relation.textContent = (labels.get(edge.source) || edge.source) + " → " + edge.relation.replaceAll("_", " ").toLowerCase() + " → " + (labels.get(edge.target) || edge.target);
+      button.append(time, relation);
+      button.addEventListener("click", function () { showEvidenceDrawer(edge); });
+      group.appendChild(button);
+    });
+    edgeList.appendChild(group);
   });
   if (!window.vis) {
     container.replaceChildren();
@@ -693,26 +767,31 @@ function renderKnowledgeGraph(graphData) {
   var degree = {};
   groundedEdges.forEach(function (edge) { degree[edge.source] = (degree[edge.source] || 0) + 1; degree[edge.target] = (degree[edge.target] || 0) + 1; });
   var maxDegree = Math.max(1, ...Object.values(degree));
-  // One colour per node type, in order of first appearance; the first type stays white.
-  var palette = ["#FAFAFA", "#3B82F6", "#F59E0B", "#22C55E", "#EF4444"];
+  // Muted neutral tones per type; the single accent (blue) is reserved for the selection.
+  var palette = ["#E4E4E7", "#A1A1AA", "#71717A"];
   var typeColors = {};
   graphData.nodes.forEach(function (node) {
     var type = node.type || "Concept";
     if (!(type in typeColors)) typeColors[type] = palette[Object.keys(typeColors).length % palette.length];
   });
+  // Always label the 8 most connected nodes; the rest show their name on hover.
+  var labelled = new Set(graphData.nodes.slice().sort(function (a, b) { return (degree[b.id] || 0) - (degree[a.id] || 0); })
+    .slice(0, 8).map(function (node) { return node.id; }));
   var nodes = graphData.nodes.map(function (node) {
     var weight = (degree[node.id] || 0) / maxDegree;
     var color = typeColors[node.type || "Concept"];
     return Object.assign({}, node, {
-      title: (node.type || "Concept") + (node.description ? " · " + node.description : ""),
+      label: labelled.has(node.id) ? node.label : undefined,
+      name: node.label,
+      title: node.label + " · " + (node.type || "Concept") + (node.description ? " · " + node.description : ""),
       mentions: node.mentions || [],
       size: 10 + 16 * weight,
-      color: { background: "#0B0B0B", border: color, highlight: { background: color, border: color }, hover: { background: "#1A1A1A", border: color } },
+      color: { background: "#111113", border: color, highlight: { background: "#3B82F6", border: "#3B82F6" }, hover: { background: "#1D1D21", border: "#FAFAFA" } },
       font: { color: "#FAFAFA", size: 12 + Math.round(4 * weight), face: "Inter, system-ui, sans-serif", strokeWidth: 4, strokeColor: "#030303" },
       borderWidth: 1.5 + weight * 1.5
     });
   });
-  var showEdgeLabels = groundedEdges.length <= 30;
+  var showEdgeLabels = groundedEdges.length <= 20;
   var edges = groundedEdges.map(function (edge, index) {
     var label = edge.relation.replaceAll("_", " ").toLowerCase();
     return Object.assign({}, edge, { id: edge.id || "edge-" + index, from: edge.source, to: edge.target, label: showEdgeLabels ? label : undefined, title: label + " · " + formatTime(edge.start_time), timestamp_str: formatTime(edge.start_time) });
@@ -749,7 +828,8 @@ function renderKnowledgeGraph(graphData) {
     if (!event.nodes.length) return;
     var id = event.nodes[0];
     focusOn([id].concat(network.getConnectedNodes(id)));
-    showNodeMentions(data.nodes.get(id));
+    var picked = data.nodes.get(id);
+    showNodeMentions(Object.assign({}, picked, { label: picked.name }));
   });
   network.on("selectEdge", function (event) {
     if (event.nodes.length || !event.edges.length) return;
@@ -816,6 +896,15 @@ function showNodeMentions(node) {
 }
 
 function escapeRegExp(value) { return value.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&"); }
+function toggleQaDrawer(open) {
+  var drawer = document.getElementById("qa-drawer");
+  var show = open === undefined ? !drawer.classList.contains("open") : open;
+  drawer.classList.toggle("open", show);
+  drawer.setAttribute("aria-hidden", String(!show));
+  document.getElementById("btn-ask").setAttribute("aria-expanded", String(show));
+  if (show) document.getElementById("qa-input").focus({ preventScroll: true });
+}
+
 function closeEvidenceDrawer() {
   document.getElementById("edge-evidence-drawer").classList.add("hidden");
   if (visNetworkInstance) visNetworkInstance.unselectAll();

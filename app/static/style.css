@@ -1277,3 +1277,104 @@ body.dark-theme {
 .deck > .flashcard[data-offset="1"] { opacity: 0.85; }
 .deck > .flashcard[data-offset="2"] { opacity: 0.5; }
 .evidence-drawer.node-mode .evidence-quote, .evidence-drawer.node-mode .evidence-meta { display: none; }
+
+/* ================================================================
+   Flat layer (final): one background colour, no gradients, glows,
+   dot grids, blur, gradient text or multicolour stripes anywhere.
+   ================================================================ */
+:root { --bg: #0B0B0C; --surface: #111113; --surface-2: #17171A; --glow: none; --grad: none; }
+body.dark-theme { background: var(--bg); background-attachment: scroll; }
+.navbar { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; border-bottom: 1px solid var(--border); }
+.navbar::after { content: none; }
+.hero::before, .hero::after { content: none; }
+.hero-content h1 { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--text); }
+.hero-input, .hero-input:focus-within { box-shadow: none; }
+.hero-input:focus-within, .qa-input-bar:focus-within { border-color: var(--muted); box-shadow: none; }
+.hero-pill { background: var(--surface); border: 1px solid var(--border-strong); }
+.hero-pill:hover { box-shadow: none; border-color: var(--muted); }
+.btn-primary { background: var(--text); color: var(--accent-text); }
+.btn-primary:hover:not(:disabled) { background: #FFFFFF; box-shadow: none; }
+.card, .glassmorphism, .processing-card { background: var(--surface); box-shadow: none; }
+.progress-indeterminate { background: var(--text); box-shadow: none; }
+.study-tab.active::after { background: var(--text); }
+.graph-canvas-wrapper { background: var(--bg); }
+.evidence-drawer { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+.deck-panel { background: var(--surface); }
+.deck .flashcard-face { background: var(--surface-2); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset; }
+.deck > .flashcard:not([data-offset="0"]) .flashcard-face { background: #1D1D21; }
+.brief-headline { border-image: none; border-left: 3px solid var(--text); }
+.flashcard:hover { box-shadow: none; }
+
+/* Hero scene v2: one slow waveform line and a timeline with a playhead */
+.hero-grid.hero-scene { -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); }
+.scene-line { fill: none; stroke: rgba(255, 255, 255, 0.09); stroke-width: 1.5; stroke-linecap: round; }
+.scene-line-2 { stroke: rgba(255, 255, 255, 0.05); }
+.scene-drift { animation: wave-drift 60s linear infinite; }
+.scene-drift-2 { animation-duration: 90s; animation-direction: reverse; }
+.scene-track { stroke: rgba(255, 255, 255, 0.10); stroke-width: 1; }
+.scene-tick { fill: rgba(255, 255, 255, 0.28); }
+.scene-played { stroke: rgba(255, 255, 255, 0.45); stroke-width: 1; stroke-dasharray: 1200; stroke-dashoffset: 1200; animation: timeline-progress 24s linear infinite; }
+.scene-head { fill: var(--text); animation: playhead-move 24s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .scene-drift, .scene-head, .scene-played { animation: none; }
+  .scene-played { stroke-dashoffset: 600; }
+  .scene-head { transform: translateX(600px); }
+}
+
+/* ================================================================
+   Review pass: deck spec, Q&A drawer, graph grouping, trims
+   ================================================================ */
+kbd { font: 500 11px ui-monospace, SFMono-Regular, Consolas, monospace; padding: 1px 5px; border-radius: 4px; border: 1px solid currentColor; opacity: 0.6; margin-left: 4px; }
+
+/* Header card + player */
+.video-info-card { padding: 14px 18px; gap: 10px; }
+.video-info-card .card-header { margin: 0; }
+.video-player { max-height: 50vh; width: 100%; object-fit: contain; }
+iframe.video-player { aspect-ratio: 16 / 9; height: auto; max-height: 50vh; }
+
+/* Transcript takes the full row now that Q&A lives in a drawer */
+.explore-grid { grid-template-columns: 1fr; }
+
+/* Deck: header progress, grading, summary, quicker motion */
+.deck-header { align-items: baseline; }
+.deck-header .deck-progress { min-width: 0; font-size: 12px; }
+.deck-progressbar { height: 3px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: -6px; }
+.deck-progressbar span { display: block; height: 100%; width: 0; background: var(--text); transition: width 200ms ease-out; }
+.deck > .flashcard { transition: transform 200ms ease-out, opacity 200ms ease-out; }
+.deck .flashcard-inner { transition: transform 250ms ease-out; }
+.deck > .flashcard[data-offset="out"] { display: none; }
+.deck-nav { min-width: 92px; font-size: 13px; }
+.deck-nav:disabled { opacity: 0.35; cursor: not-allowed; }
+.deck-grade { display: flex; justify-content: center; gap: 10px; margin-top: -6px; }
+.deck-grade[hidden] { display: none; }
+.deck-summary { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 36px 0 12px; }
+.deck-score { font-size: 22px; font-weight: 600; letter-spacing: -0.015em; }
+.deck-summary-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+@media (prefers-reduced-motion: reduce) {
+  .deck > .flashcard, .deck .flashcard-inner { transition: opacity 150ms linear; }
+}
+
+/* Q&A drawer: right side, own scroll, page stays usable */
+.qa-drawer {
+  position: fixed; top: 64px; right: 16px; bottom: 16px; width: min(420px, calc(100vw - 32px)); z-index: 60;
+  transform: translateX(calc(100% + 24px)); opacity: 0; pointer-events: none;
+  transition: transform 220ms ease-out, opacity 220ms ease-out;
+}
+.qa-drawer.open { transform: none; opacity: 1; pointer-events: auto; }
+.qa-drawer .qa-card { height: 100%; display: flex; flex-direction: column; gap: 10px; border-color: var(--border-strong); box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.9); }
+.qa-drawer .qa-history { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
+.qa-drawer .card-header { align-items: center; }
+.qa-suggestion { background: transparent; border: 1px solid var(--border-strong); color: var(--muted); font-weight: 400; border-radius: 10px; padding: 6px 10px; }
+.qa-suggestion:hover { color: var(--text); border-color: var(--muted); background: transparent; }
+@media (prefers-reduced-motion: reduce) { .qa-drawer { transition: opacity 150ms linear; transform: none; } }
+
+/* Graph: toggle + grouped, left-aligned evidence list */
+.graph-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.graph-toggle input { accent-color: #3B82F6; }
+.graph-evidence-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.relation-group { display: flex; flex-direction: column; gap: 2px; }
+.relation-group h5 { font-size: 12px; font-weight: 600; color: var(--text); margin: 0 0 2px; }
+.graph-relation { justify-content: flex-start; gap: 10px; text-align: left; border: 0; background: transparent; padding: 5px 8px; }
+.graph-relation > .chapter-time { order: 0; flex-shrink: 0; }
+.graph-relation > :last-child { font-family: inherit; font-size: 13px; color: var(--text); opacity: 1; }
+.legend-item i { background: #111113; }
