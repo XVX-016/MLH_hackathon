@@ -75,7 +75,15 @@ Run `python -m eval.evaluate`. Results on the bundled demo:
 | Mean quote match score | ≥ 90 | **100** |
 | Timestamp error | ≤ 2 s | **0 s** |
 
-The demo set is small (3 edges and 3 citations), so treat these as a regression check, not a benchmark. The test suite runs with `python -m pytest tests/`.
+The demo set is small (3 edges and 3 citations), so treat these as a regression check, not a benchmark.
+
+On a real YouTube video (a 6-minute gaming video with auto-captions, 23 extracted claims), the grounding rate went from **9/23 (39%) to 22/23 (96%)** after fixing the causes, with the 90-point match threshold unchanged:
+
+| Failure cause | Claims | Fix |
+| :--- | :---: | :--- |
+| Rolling auto-caption duplicates diluting a verbatim quote | 10 | Collapse rolling captions at ingest |
+| Verbatim quote cited at the wrong time | 3 | Move the claim to where the quote is actually said |
+| Quote stitched from separate passages with "..." | 1 | Still rejected: the pieces are 60 s apart | The test suite runs with `python -m pytest tests/`.
 
 ## Built on
 
